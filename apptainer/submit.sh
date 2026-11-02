@@ -3,8 +3,8 @@
 # image through apptainer/run.sh, alone on one node of the cluster.
 #
 #     apptainer/submit.sh [run.sh options] [--] command ...
-#     apptainer/submit.sh -- bash run_case.sh cases/rialba_case1
-#     apptainer/submit.sh -o $HOME/speed_runs -- bash run_case.sh cases/rialba_case1
+#     apptainer/submit.sh -- bash run_case.sh cases/rialba_source
+#     apptainer/submit.sh -o $HOME/speed_runs -- bash run_case.sh cases/rialba_source
 #
 # The arguments go to apptainer/run.sh unchanged, so relative paths in the
 # command are relative to the repository (/workspace in the container), and

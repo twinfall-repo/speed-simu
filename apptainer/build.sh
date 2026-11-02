@@ -81,9 +81,13 @@ speed_build() {
     echo "building ${image}"
     echo "  from    ${definition}"
     echo "  with    ${apptainer_bin}"
+    echo "  patches $(cd "${here}/patches" && ls | tr '\n' ' ')"
+    # from apptainer/, where the %files paths of the definition are resolved;
+    # in a subshell, so that a sourced build leaves your folder alone
+    image=$(realpath -m "${image}")
     # shellcheck disable=SC2086
-    "${apptainer_bin}" build ${privilege} ${build_flags[@]+"${build_flags[@]}"} \
-        ${APPTAINER_ARGS:-} "${image}" "${definition}" || return $?
+    (cd "${here}" && "${apptainer_bin}" build ${privilege} ${build_flags[@]+"${build_flags[@]}"} \
+        ${APPTAINER_ARGS:-} "${image}" "${definition}") || return $?
     echo "done: ${image}"
 }
 

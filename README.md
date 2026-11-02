@@ -19,7 +19,8 @@ apptainer/
   run.sh           one command in the image, non-interactively
   submit.sh        one command as a PBS job, through run.sh
 run_case.sh        run SPEED on one case (inside the container)
-cases/<case>/      SPEED.input, .mate, LS.input, <GRIDFILE>.mesh -> ../../data/...
+apptainer/patches/ files that replace SPEED's own before compiling
+cases/<case>/      SPEED.input, .mate, (LS.input), <GRIDFILE>.mesh -> ../../data/...
 data/meshes/       small meshes kept in the repository
 output/            the runs, not tracked: output/<case>/<run>[.tar.gz]
 logs/              the PBS job logs, not tracked
@@ -33,8 +34,13 @@ source apptainer/build.sh -f        # rebuild, with the latest SPEED
 ```
 
 The compiled SPEED commit is printed by the build and is in
-`/opt/speed-commit.txt` in the image; every run copies it into its
-`run_info.txt`. SPEED's Makefile leaves `OPT_FLAGS` undefined: the image
+`/opt/speed-commit.txt` in the image, together with the patches applied;
+every run copies it into its `run_info.txt`.
+
+`apptainer/patches/WRITE_VTU_TIMEDATA.f90` replaces SPEED's own: the
+`VTKWRITE` output is XDMF plus raw binary files by default, or binary VTU,
+chosen at run time with `SPEED_VTK_FORMAT=xdmf|binary|ascii` and
+`SPEED_VTK_STRAIN=1|0` (default 1), both passed into the container. SPEED's Makefile leaves `OPT_FLAGS` undefined: the image
 compiles with `OPT_FLAGS=-O3`. If the build dies with "no space left on
 device":
 
@@ -48,7 +54,7 @@ export APPTAINER_CACHEDIR=$HOME/.apptainer/cache
 Interactively, e.g. on a laptop or for a short test:
 
 ```bash
-source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_case1
+source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source
 source apptainer/shell.sh                      # or a shell, then the same inside
 ```
 
@@ -56,9 +62,9 @@ As a PBS job, a whole node by default (96 ncpus, i.e. 48 physical cores, 500 GB,
 exclusive):
 
 ```bash
-apptainer/submit.sh -- bash run_case.sh cases/rialba_case1
-SPEED_NCPUS=32 SPEED_MEM_GB=64 apptainer/submit.sh -- bash run_case.sh cases/rialba_case1
-SPEED_NAME=rialba_case1 apptainer/submit.sh -- bash run_case.sh cases/rialba_case1
+apptainer/submit.sh -- bash run_case.sh cases/rialba_source
+SPEED_NCPUS=32 SPEED_MEM_GB=64 apptainer/submit.sh -- bash run_case.sh cases/rialba_source
+SPEED_NAME=rialba_source apptainer/submit.sh -- bash run_case.sh cases/rialba_source
 ```
 
 SPEED is hybrid MPI and OpenMP: `SPEED_THREADS` OpenMP threads (default 1) on
@@ -82,7 +88,7 @@ written by dtm_voxelization, bind its output as data and pick the mesh with
 
 ```bash
 apptainer/submit.sh -d ../dtm_voxelization/output -o $HOME/speed_runs -- \
-    bash run_case.sh -m data/rialba/speed/rialba.mesh cases/rialba_case1
+    bash run_case.sh -m data/rialba/speed/rialba.mesh cases/rialba_source
 ```
 
 The output folder of `run_case.sh` is `output/` of the repository *inside*
@@ -92,7 +98,7 @@ the container, i.e. whatever `-o` bound there.
 
 ```bash
 mkdir cases/my_case
-cp cases/rialba_case1/{SPEED.input,LS.input,*.mate} cases/my_case/
+cp cases/rialba_source/{SPEED.input,*.mate} cases/my_case/
 ln -s ../../data/meshes/my_mesh.mesh cases/my_case/my_mesh.mesh   # GRIDFILE my_mesh
 ```
 

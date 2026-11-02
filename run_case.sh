@@ -2,13 +2,13 @@
 # Run SPEED on one case, inside the container, in a run folder of its own:
 #
 #     bash run_case.sh [-n NP] [-m MESH] CASE_DIR
-#     source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_case1
-#     apptainer/submit.sh -- bash run_case.sh cases/rialba_case1
+#     source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source
+#     apptainer/submit.sh -- bash run_case.sh cases/rialba_source
 #     apptainer/submit.sh -d ../dtm_voxelization/output -- \
-#         bash run_case.sh -m data/rialba/speed/rialba.mesh cases/rialba_case1
+#         bash run_case.sh -m data/rialba/speed/rialba.mesh cases/rialba_source
 #
-# A case is a folder with SPEED.input and everything it names (the .mate, the
-# LS.input, ...) and, usually, the mesh <GRIDFILE>.mesh as a relative symlink
+# A case is a folder with SPEED.input and everything it names (the .mate, an
+# LS.input with MLST, ...) and, usually, the mesh <GRIDFILE>.mesh as a relative symlink
 # into data/. -m MESH runs the case on another mesh instead, any path visible
 # in the container (data/ is whatever apptainer/shell.sh -d bound there).
 #
@@ -22,7 +22,9 @@
 # run folder holds run_info.txt (what was run, on what, with which SPEED),
 # speed.out (SPEED's own output) and the results, and ends up archived in
 # output/<case>/<run>.tar.gz, a single file to copy off the cluster.
-# SPEED_THREADS (default 1) is the OpenMP threads of each MPI process.
+# SPEED_THREADS (default 1) is the OpenMP threads of each MPI process;
+# SPEED_VTK_FORMAT and SPEED_VTK_STRAIN the output of VTKWRITE (see
+# apptainer/speed.def).
 
 set -euo pipefail
 
@@ -32,7 +34,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -n) np=$2; shift 2 ;;
         -m) mesh=$2; shift 2 ;;
-        -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
@@ -98,7 +100,12 @@ mkdir -p VTKOUT POST-PROC ${mpifile:+"${mpifile}"} ${monfile:+"${monfile}"}
     echo "case:      ${case_dir}"
     echo "run:       ${run_dir}"
     echo "mesh:      ${mesh} ($(du -hL "${mesh}" | cut -f1))"
-    echo "speed:     $(cat /opt/speed-commit.txt 2>/dev/null || echo 'unknown, not in the image')"
+    if [ -f /opt/speed-commit.txt ]; then
+        echo "speed:     $(paste -sd ';' /opt/speed-commit.txt)"
+    else
+        echo "speed:     unknown, /opt/speed-commit.txt not there: not in the image?"
+    fi
+    echo "vtk:       format ${SPEED_VTK_FORMAT:-unset (xdmf)}, strain ${SPEED_VTK_STRAIN:-unset (1)}"
     echo "host:      $(hostname)"
     echo "processes: ${np}"
     echo "threads:   ${threads} per process"
