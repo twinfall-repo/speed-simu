@@ -23,10 +23,10 @@
 # is a directory of ~100k small files, which parallel filesystems handle
 # badly and some sites forbid. Build a sandbox only to modify it in place.
 #
-# On a cluster the build unpacks layers into TMPDIR, often a small tmpfs on
-# the login node. If it dies with "no space left on device":
-#     export APPTAINER_TMPDIR=/scratch/$USER/apptainer_tmp
-#     export APPTAINER_CACHEDIR=/scratch/$USER/apptainer_cache
+# The build unpacks layers into TMPDIR, often small on a login node. If it
+# dies with "no space left on device", point both somewhere with room:
+#     export APPTAINER_TMPDIR=$HOME/.apptainer/tmp
+#     export APPTAINER_CACHEDIR=$HOME/.apptainer/cache
 #
 # Written to be safe when sourced: no exec, no exit, no `set -e` leaking into
 # your interactive shell.
@@ -70,7 +70,12 @@ speed_build() {
 
     for scratch in APPTAINER_TMPDIR APPTAINER_CACHEDIR; do
         eval "value=\${${scratch}:-}"
-        [ -n "${value}" ] && mkdir -p "${value}" && echo "${scratch}=${value}"
+        [ -z "${value}" ] && continue
+        mkdir -p "${value}" || {
+            echo "cannot make ${scratch}=${value}: point it somewhere writable or unset it" >&2
+            return 1
+        }
+        echo "${scratch}=${value}"
     done
 
     echo "building ${image}"

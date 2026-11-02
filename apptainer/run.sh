@@ -5,7 +5,7 @@
 #
 #     apptainer/run.sh [options] [--] command ...
 #     apptainer/run.sh bash run_case.sh -n 4 cases/rialba_case1
-#     apptainer/run.sh -o /scratch/$USER/speed -- bash run_case.sh cases/rialba_case1
+#     apptainer/run.sh -o $HOME/speed_runs -- bash run_case.sh cases/rialba_case1
 #
 # Options: the same as apptainer/shell.sh (-i, -o, -d, -b, -a), and so are the
 # environment variables (APPTAINER_BIN, SPEED_IMAGE, SPEED_OUTPUT, SPEED_DATA,

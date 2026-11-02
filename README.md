@@ -39,8 +39,8 @@ compiles with `OPT_FLAGS=-O3`. If the build dies with "no space left on
 device":
 
 ```bash
-export APPTAINER_TMPDIR=/scratch/$USER/apptainer_tmp
-export APPTAINER_CACHEDIR=/scratch/$USER/apptainer_cache
+export APPTAINER_TMPDIR=$HOME/.apptainer/tmp
+export APPTAINER_CACHEDIR=$HOME/.apptainer/cache
 ```
 
 ## Run a case
@@ -81,7 +81,7 @@ written by dtm_voxelization, bind its output as data and pick the mesh with
 `-m`:
 
 ```bash
-apptainer/submit.sh -d ../dtm_voxelization/output -o /scratch/$USER/speed -- \
+apptainer/submit.sh -d ../dtm_voxelization/output -o $HOME/speed_runs -- \
     bash run_case.sh -m data/rialba/speed/rialba.mesh cases/rialba_case1
 ```
 
