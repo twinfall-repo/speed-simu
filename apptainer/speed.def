@@ -1,0 +1,78 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+# Image for speed-simu: the toolchain (gfortran, OpenMPI, METIS) and SPEED
+# itself, cloned from https://bitbucket.org/ilmaz/speed and compiled at build
+# time in /opt/speed. The cases, the meshes and the run script do NOT live in
+# the image -- the repository is bind-mounted at /workspace when the container
+# runs (see apptainer/shell.sh), so a new case or a new mesh needs no rebuild.
+# Only a new version of SPEED does.
+
+%labels
+    Name speed-simu
+    Description SPEED spectral elements code, compiled in the image
+
+%environment
+    export SPEED_FOLDER=/opt/speed
+    export PATH=${SPEED_FOLDER}:${PATH}
+    export PROJECT_DIR=/workspace
+    # the shared memory transport of OpenMPI tries CMA, which needs ptrace
+    # between the ranks and fails in a container; plain copies through /dev/shm
+    export OMPI_MCA_btl_vader_single_copy_mechanism=none
+
+%post
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    SPEED_FOLDER=/opt/speed
+
+    apt-get update -y
+    apt-get install -y --no-install-recommends \
+        openmpi-bin openmpi-common libopenmpi-dev \
+        libmetis5 libmetis-dev \
+        build-essential gfortran make git ca-certificates vim less
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    git clone --depth 1 https://bitbucket.org/ilmaz/speed.git ${SPEED_FOLDER}
+    # written to a file: inside the container the clone belongs to root, and
+    # git refuses to read a repository of another user (safe.directory)
+    git -C ${SPEED_FOLDER} log -1 --format='%H %ad %s' --date=short > /opt/speed-commit.txt
+    echo "SPEED commit: $(cat /opt/speed-commit.txt)"
+
+    # the Makefile points METIS at homebrew and leaves OPT_FLAGS undefined,
+    # i.e. -O0: both are overridden on the make command line
+    make -C ${SPEED_FOLDER} -j "$(nproc)" \
+        OPT_FLAGS=-O3 \
+        METIS_INCLUDE_FLAGS=-I/usr/include \
+        "METIS_LD_FLAGS=-L/usr/lib/x86_64-linux-gnu -lmetis"
+    rm -f ${SPEED_FOLDER}/*.o ${SPEED_FOLDER}/*.mod
+
+    # mount points for the bind-mounted repository, data and output
+    mkdir -p /workspace /workspace/data /workspace/output
+
+%runscript
+    cd ${PROJECT_DIR:-/workspace}
+    if [ $# -eq 0 ]; then
+        exec /bin/bash
+    fi
+    exec "$@"
+
+%test
+    test -x /opt/speed/SPEED
+    if ldd /opt/speed/SPEED | grep "not found"; then
+        exit 1
+    fi
+    echo "SPEED $(cat /opt/speed-commit.txt)"
+    mpirun --version | head -n 1
+
+%help
+    speed-simu -- SPEED, compiled in /opt/speed (on PATH).
+
+    The cases are NOT baked into the image: bind the repository at /workspace.
+    apptainer/shell.sh does that, with separately bindable data and output:
+
+        source apptainer/shell.sh                                  # shell
+        source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_case1
+        apptainer/submit.sh -- bash run_case.sh cases/rialba_case1 # PBS job
+
+    Built SPEED commit: /opt/speed-commit.txt

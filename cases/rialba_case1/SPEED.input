@@ -1,0 +1,16 @@
+GRIDFILE  rialba_with_boundaries
+MATFILE   test1_conf_sem
+MPIFILE   FILES_MPI
+MONFILE   MONITOR
+
+DAMPING  0
+
+OPTIOUT  1 1 1   1 1 1    1 1             
+
+TIMESTEP 0.00025
+TMONITOR 10
+STOPTIME 5
+
+MLST 0 0
+
+VTKWRITE T 100

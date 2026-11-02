@@ -1,0 +1,10 @@
+MATE    1     2       1800	    300    600       30  60
+      label degree     rho       vs     vp       qs  qp
+
+ABSO 2 
+
+DIRX 3 4 1.0 1.0 1.0 1.0
+FUNC 4 8 1.0
+
+PLAZ 5 1 0.0
+FUNC 5 1 1.0 1.0

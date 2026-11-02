@@ -1,0 +1,9 @@
+# Apptainer images
+apptainer/*.sif
+
+# Runs and job logs
+output/
+logs/
+
+*~
+*.swp
