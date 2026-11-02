@@ -39,7 +39,7 @@ From: ubuntu:24.04
     apt-get install -y --no-install-recommends \
         openmpi-bin openmpi-common libopenmpi-dev \
         libmetis5 libmetis-dev \
-        build-essential gfortran make git ca-certificates vim less
+        build-essential gfortran make git ca-certificates vim less zstd
     apt-get clean
     rm -rf /var/lib/apt/lists/*
 

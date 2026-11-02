@@ -22,7 +22,7 @@ run_case.sh        run SPEED on one case (inside the container)
 apptainer/patches/ files that replace SPEED's own before compiling
 cases/<case>/      SPEED.input, .mate, (LS.input), <GRIDFILE>.mesh -> ../../data/...
 data/meshes/       small meshes kept in the repository
-output/            the runs, not tracked: output/<case>/<run>[.tar.gz]
+output/            the runs, not tracked: output/<case>/<run>[.tar.zst]
 logs/              the PBS job logs, not tracked
 ```
 
@@ -76,7 +76,8 @@ inside the container, so a run is on one node.
 `output/<case>/<run>` (`<run>` is the PBS job id, or the time), links the mesh
 there as `<GRIDFILE>.mesh`, runs SPEED with its output in `speed.out`, writes
 what was run in `run_info.txt` and archives the whole folder in
-`output/<case>/<run>.tar.gz`.
+`output/<case>/<run>.tar.zst` with zstd on all the cores (`tar -I zstd -xf` to
+unpack); `run_info.txt` ends with its size, ratio and time.
 
 ### Other data and other output folders
 

@@ -21,7 +21,9 @@
 # there. <run> is the PBS job id when there is one, the time otherwise. The
 # run folder holds run_info.txt (what was run, on what, with which SPEED),
 # speed.out (SPEED's own output) and the results, and ends up archived in
-# output/<case>/<run>.tar.gz, a single file to copy off the cluster.
+# output/<case>/<run>.tar.zst, a single file to copy off the cluster
+# (tar -I zstd -xf to unpack). zstd runs on all the cores the run had: gzip,
+# on one core, took longer than SPEED itself on the binary VTK output.
 # SPEED_THREADS (default 1) is the OpenMP threads of each MPI process;
 # SPEED_VTK_FORMAT and SPEED_VTK_STRAIN the output of VTKWRITE (see
 # apptainer/speed.def).
@@ -129,7 +131,12 @@ if [ "${status}" -ne 0 ]; then
 fi
 
 # also after a failure: what SPEED did write is what tells why
-archive="${run_dir}.tar.gz"
-tar -czf "${archive}" -C "$(dirname "${run_dir}")" "${run_id}"
-echo "archive:   ${archive} ($(du -h "${archive}" | cut -f1))"
+archive="${run_dir}.tar.zst"
+started=$(date +%s)
+tar -I 'zstd -T0' -cf "${archive}" -C "$(dirname "${run_dir}")" "${run_id}"
+size=$(du -sk "${run_dir}" | cut -f1)
+packed=$(du -k "${archive}" | cut -f1)
+echo "archive:   ${archive} ($(du -h "${archive}" | cut -f1) from $(du -sh "${run_dir}" | cut -f1)," \
+    "ratio $(awk -v a="${size}" -v b="${packed}" 'BEGIN { printf "%.2f", a / b }')," \
+    "$(( $(date +%s) - started ))s)" | tee -a run_info.txt
 exit "${status}"
