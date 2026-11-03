@@ -19,20 +19,25 @@
 !> @brief Field output for ParaView (VTKWRITE T n), drop-in replacement of the original
 !!        WRITE_VTU_TIMEDATA.f90 (same subroutines, same arguments: nothing else in SPEED changes).
 !!
-!! Three formats, chosen in SPEED.input on the VTKWRITE line (the original SPEED ignores the extra words):
-!!   VTKWRITE  T 100              XDMF with strain (default)
-!!   VTKWRITE  T 100 XDMF         VTKOUT/SPEED.xmf + SPEED_elements.xmf + raw binary files. Same data as the original
-!!                                (all GLL nodes, same node order, Disp and Strain, time = step * dt), but the mesh is
-!!                                written once (mesh_points.bin, mesh_cells.bin, mesh_elements.bin) and each snapshot
-!!                                only holds the fields (Disp_<step>.bin float32 (np,3), Strain_<step>.bin (np,6)).
-!!                                SPEED.xmf: each spectral element as (nn-1)^3 linear hexahedra through its GLL nodes
-!!                                (ParaView's XDMF reader has no reliable Lagrange hexahedron);
-!!                                SPEED_elements.xmf: the spectral elements (8 corners), the grid of the mesh file.
-!!   VTKWRITE  T 100 VTUBINARY    exactly the files of the original (.vtu / .pvtu / .pvd, Lagrange cells), binary.
-!!   VTKWRITE  T 100 VTUASCII     the original text files.
-!!   ... NOSTRAIN                 leaves the strain out (e.g. VTKWRITE T 100 XDMF NOSTRAIN).
-!! If the line has no format word, the environment variables SPEED_VTK_FORMAT (xdmf / binary / ascii) and
-!! SPEED_VTK_STRAIN (0 / 1) are used; SPEED.input wins over them.
+!! Usage in SPEED.input (the format word is written explicitly; the original SPEED reads only "T 100"
+!! from this line and ignores the extra words, so the same SPEED.input works with both versions):
+!!
+!!   VTKWRITE  T 100 XDMF                  XDMF, with strain
+!!   VTKWRITE  T 100 XDMF NOSTRAIN         XDMF, displacement only
+!!
+!!   VTKWRITE  T 100 VTUBINARY             original .vtu/.pvtu/.pvd, binary
+!!   VTKWRITE  T 100 VTUBINARY NOSTRAIN    original .vtu/.pvtu/.pvd, binary, displacement only
+!!
+!!   VTKWRITE  T 100 VTUASCII              original text .vtu
+!!   VTKWRITE  T 100 VTUASCII NOSTRAIN     original text .vtu, displacement only
+!!
+!! XDMF: VTKOUT/SPEED.xmf + SPEED_elements.xmf + raw binary files. Same data as the original (all GLL
+!! nodes, same node order, Disp and Strain, time = step * dt), but the mesh is written once
+!! (mesh_points.bin, mesh_cells.bin, mesh_elements.bin) and each snapshot only holds the fields
+!! (Disp_<step>.bin float32 (np,3), Strain_<step>.bin float32 (np,6)).
+!! SPEED.xmf shows each spectral element as (nn-1)^3 linear hexahedra through its GLL nodes (ParaView's
+!! XDMF reader has no reliable Lagrange hexahedron); SPEED_elements.xmf shows the spectral elements.
+!! VTUBINARY / VTUASCII: the files of the original (.vtu / .pvtu / .pvd, Lagrange cells).
 !! Fix: the original clamped the strain with "if (strain < 1e-29) strain = 1e-29", which turned every
 !! negative strain into +1e-29; now only the magnitude is limited to the float32 range.
 !!
@@ -384,7 +389,7 @@ end module speed_vtk_out
 
 
     !-----------------------------------------------------------------------------------------------
-    !> the original text format (strain clamp fixed; strain only with SPEED_VTK_STRAIN=1)
+    !> the original text format (strain clamp fixed; no strain with NOSTRAIN)
     subroutine VTK_WRITE_ASCII(nn_loc, cs_nnz_loc, cs_loc, xx_loc, yy_loc, zz_loc, mpi_id, nmpi, &
                                nn, vtk_numbering_map, its, strain, disp)
       use speed_vtk_out
