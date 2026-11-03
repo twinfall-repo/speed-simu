@@ -1,0 +1,3 @@
+[submodule "data/meshes"]
+	path = data/meshes
+	url = git@github.com:twinfall-repo/speed-meshes.git

@@ -1,113 +1,45 @@
 # speed-simu
 
 Runs of [SPEED](https://bitbucket.org/ilmaz/speed) on the cluster, through an
-Apptainer image. The image holds only the toolchain (gfortran, OpenMPI, METIS)
-and SPEED, compiled in `/opt/speed`; the cases, the meshes and the run script
-are in this repository, bind-mounted at `/workspace` when the container runs.
-A new case or a new mesh needs no rebuild, only a new SPEED does.
+Apptainer image with SPEED compiled in it. Cases are in `cases/`; meshes are in
+the submodule `data/meshes` ([speed-meshes](https://github.com/twinfall-repo/speed-meshes),
+zstd-compressed in Git LFS, unpacked by `run_case.sh` when a run needs them).
+Every script prints its options with `-h`.
 
-The pre- and post-processing scripts (monitors, DTM resampling, ...) stay in
-`speed-repo`; the meshes come from `dtm_voxelization`.
+## Clone and pull
 
-## Layout
-
-```
-apptainer/
-  speed.def        the image: SPEED cloned and compiled at build time
-  build.sh         build it              -> apptainer/speed.sif
-  shell.sh         shell in the image, repo at /workspace
-  run.sh           one command in the image, non-interactively
-  submit.sh        one command as a PBS job, through run.sh
-run_case.sh        run SPEED on one case (inside the container)
-apptainer/patches/ files that replace SPEED's own before compiling
-cases/<case>/      SPEED.input, .mate, (LS.input), <GRIDFILE>.mesh -> ../../data/...
-data/meshes/       small meshes kept in the repository
-output/            the runs, not tracked: output/<case>/<run>[.tar.zst]
-logs/              the PBS job logs, not tracked
-```
-
-## Build (once, and for every new SPEED)
+Needs `git-lfs` (`git lfs install` once).
 
 ```bash
-source apptainer/build.sh           # -> apptainer/speed.sif
-source apptainer/build.sh -f        # rebuild, with the latest SPEED
+git clone --recurse-submodules git@github.com:twinfall-repo/speed-simu.git
+git pull --recurse-submodules        # a plain git pull leaves the meshes as they were
+git submodule update --init          # data/meshes empty: a clone without the submodule
 ```
 
-The compiled SPEED commit is printed by the build and is in
-`/opt/speed-commit.txt` in the image, together with the patches applied;
-every run copies it into its `run_info.txt`.
-
-`apptainer/patches/WRITE_VTU_TIMEDATA.f90` replaces SPEED's own: the
-`VTKWRITE` output is XDMF plus raw binary files by default, or binary VTU,
-chosen at run time with `SPEED_VTK_FORMAT=xdmf|binary|ascii` and
-`SPEED_VTK_STRAIN=1|0` (default 1), both passed into the container. SPEED's Makefile leaves `OPT_FLAGS` undefined: the image
-compiles with `OPT_FLAGS=-O3`. If the build dies with "no space left on
-device":
+## Build the image (once, and for every new SPEED)
 
 ```bash
-export APPTAINER_TMPDIR=$HOME/.apptainer/tmp
-export APPTAINER_CACHEDIR=$HOME/.apptainer/cache
+source apptainer/build.sh            # -> apptainer/speed.sif
+source apptainer/build.sh -f         # rebuild with the latest SPEED
 ```
 
-## Run a case
-
-Interactively, e.g. on a laptop or for a short test:
+## Run the test case
 
 ```bash
-source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source
-source apptainer/shell.sh                      # or a shell, then the same inside
+source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source   # here, 4 processes
+apptainer/submit.sh -- bash run_case.sh cases/rialba_source               # PBS job, a whole node
 ```
 
-As a PBS job, a whole node by default (96 ncpus, i.e. 48 physical cores, 500 GB,
-exclusive):
-
-```bash
-apptainer/submit.sh -- bash run_case.sh cases/rialba_source
-SPEED_NCPUS=32 SPEED_MEM_GB=64 apptainer/submit.sh -- bash run_case.sh cases/rialba_source
-SPEED_NAME=rialba_source apptainer/submit.sh -- bash run_case.sh cases/rialba_source
-```
-
-SPEED is hybrid MPI and OpenMP: `SPEED_THREADS` OpenMP threads (default 1) on
-each of `SPEED_NP` MPI processes, which `submit.sh` sets by default to
-`SPEED_NCPUS / 2 / SPEED_THREADS`, and `-n` of `run_case.sh` overrides. MPI runs
-inside the container, so a run is on one node.
-
-`run_case.sh` never writes in the case folder: it copies the case files to
-`output/<case>/<run>` (`<run>` is the PBS job id, or the time), links the mesh
-there as `<GRIDFILE>.mesh`, runs SPEED with its output in `speed.out`, writes
-what was run in `run_info.txt` and archives the whole folder in
-`output/<case>/<run>.tar.zst` with zstd on all the cores (`tar -I zstd -xf` to
-unpack); `run_info.txt` ends with its size, ratio and time.
-
-### Other data and other output folders
-
-`data/` and `output/` in the container are the repository's own, unless bound
-elsewhere with `-d` and `-o` (the same for `shell.sh`, `run.sh` and
-`submit.sh`), or with `SPEED_DATA` and `SPEED_OUTPUT`. To run a case on a mesh
-written by dtm_voxelization, bind its output as data and pick the mesh with
-`-m`:
-
-```bash
-apptainer/submit.sh -d ../dtm_voxelization/output -o $HOME/speed_runs -- \
-    bash run_case.sh -m data/rialba/speed/rialba.mesh cases/rialba_source
-```
-
-The output folder of `run_case.sh` is `output/` of the repository *inside*
-the container, i.e. whatever `-o` bound there.
+The run is in `output/rialba_source/<run>/` and archived in
+`output/rialba_source/<run>.tar.zst`; `run_info.txt` there says what was run,
+`speed.out` is SPEED's output. The PBS log is in `logs/`.
 
 ## A new case
 
 ```bash
 mkdir cases/my_case
-cp cases/rialba_source/{SPEED.input,*.mate} cases/my_case/
-ln -s ../../data/meshes/my_mesh.mesh cases/my_case/my_mesh.mesh   # GRIDFILE my_mesh
+cp cases/rialba_source/{SPEED.input,*.mate} cases/my_case/                 # GRIDFILE my_mesh
+ln -s ../../data/meshes/my_mesh.mesh cases/my_case/my_mesh.mesh
 ```
 
-Small meshes go in `data/meshes/`; large ones stay outside the repository and
-come in with `-d` (the symlink then resolves into the bound folder) or `-m`.
-
-## Mail at the end of a job
-
-`submit.sh` writes a summary of every finished job in `~/.job_notify/`, the
-queue shared with pg_paper and dtm_voxelization; `~/bin/job_notify.sh`, set up
-once from `apptainer/notify.sh` of pg_paper, mails them from the login node.
+with `my_mesh.mesh.zst` added to speed-meshes (see its README).

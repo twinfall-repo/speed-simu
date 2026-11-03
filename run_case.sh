@@ -11,6 +11,7 @@
 # LS.input with MLST, ...) and, usually, the mesh <GRIDFILE>.mesh as a relative symlink
 # into data/. -m MESH runs the case on another mesh instead, any path visible
 # in the container (data/ is whatever apptainer/shell.sh -d bound there).
+# A mesh <name>.mesh.zst, as in the submodule data/meshes, is unpacked first.
 #
 # Options:
 #   -n NP     MPI processes (default: $SPEED_NP, then 1)
@@ -36,7 +37,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -n) np=$2; shift 2 ;;
         -m) mesh=$2; shift 2 ;;
-        -h|--help) sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
@@ -76,8 +77,30 @@ else
     mesh="${case_dir}/${gridfile}.mesh"
     echo "mesh:    ${mesh} (the case's own)"
 fi
+
+# a mesh kept compressed, as in the meshes submodule data/meshes, is unpacked
+# next to its .zst: once, and again when the .zst is newer (a pulled mesh).
+# Written aside and renamed, so that two runs starting together never read it half written
+target=$(realpath -m "${mesh}")
+if [ -f "${target}.zst" ]; then
+    if head -c 100 "${target}.zst" | grep -q '^version https://git-lfs'; then
+        echo "${target}.zst is a Git LFS pointer, not the mesh: install git-lfs, then" \
+            "git lfs install && git submodule update --init" >&2
+        exit 1
+    fi
+    if [ ! -f "${target}" ] || [ "${target}.zst" -nt "${target}" ]; then
+        echo "unpack:  ${target}.zst ($(du -h "${target}.zst" | cut -f1)) -> ${target}"
+        started=$(date +%s)
+        zstd -d -q -f "${target}.zst" -o "${target}.tmp.$$"
+        mv "${target}.tmp.$$" "${target}"
+        echo "unpack:  $(du -h "${target}" | cut -f1), $(( $(date +%s) - started ))s"
+    else
+        echo "unpack:  not needed, ${target} is up to date with its .zst"
+    fi
+fi
 if [ ! -f "${mesh}" ]; then
-    echo "mesh not found: ${mesh} -- a dangling symlink? data/ is what apptainer/shell.sh -d bound" >&2
+    echo "mesh not found: ${mesh} -- a dangling symlink? data/meshes is a submodule" \
+        "(git submodule update --init), data/ is what apptainer/shell.sh -d bound" >&2
     exit 1
 fi
 mesh=$(realpath "${mesh}")
