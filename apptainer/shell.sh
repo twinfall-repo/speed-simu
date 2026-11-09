@@ -38,7 +38,7 @@
 
 speed_shell() {
     local here repo image output data apptainer_bin bind
-    local -a extra_binds=() binds=() bind_args=() isolation=()
+    local -a extra_binds=() binds=() bind_args=() isolation=() job_env=()
 
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     repo=$(cd "${here}/.." && pwd)
@@ -125,17 +125,18 @@ speed_shell() {
 
     # In a PBS job, the nodes as host:slots, for mpirun in the container
     # (PBS_NODEFILE itself is not visible there), and how mpirun starts orted
-    # on the other nodes: through ssh, in this same image with the same binds
+    # on the other nodes: through ssh, in this same image with the same binds.
+    # Passed as APPTAINERENV_*, not --env, which splits its value at the commas
     if [ -n "${PBS_NODEFILE:-}" ]; then
-        isolation+=(--env "SPEED_HOSTS=$(sort "${PBS_NODEFILE}" | uniq -c | awk '{ printf "%s%s:%s", sep, $2, $1; sep = "," }')")
-        isolation+=(--env "SPEED_LAUNCH_AGENT=$(command -v "${apptainer_bin}") exec ${isolation[*]} ${bind_args[*]} ${image} orted")
+        job_env+=("APPTAINERENV_SPEED_HOSTS=$(sort "${PBS_NODEFILE}" | uniq -c | awk '{ printf "%s%s:%s", sep, $2, $1; sep = "," }')")
+        job_env+=("APPTAINERENV_SPEED_LAUNCH_AGENT=$(command -v "${apptainer_bin}") exec ${isolation[*]} ${bind_args[*]} ${image} orted")
         echo "nodes:   $(sort -u "${PBS_NODEFILE}" | paste -sd ' ')"
     fi
 
     if [ $# -eq 0 ]; then
-        "${apptainer_bin}" shell "${isolation[@]}" "${bind_args[@]}" "${image}"
+        env ${job_env[@]+"${job_env[@]}"} "${apptainer_bin}" shell "${isolation[@]}" "${bind_args[@]}" "${image}"
     else
-        "${apptainer_bin}" exec "${isolation[@]}" "${bind_args[@]}" "${image}" "$@"
+        env ${job_env[@]+"${job_env[@]}"} "${apptainer_bin}" exec "${isolation[@]}" "${bind_args[@]}" "${image}" "$@"
     fi
 }
 
