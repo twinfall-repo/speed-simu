@@ -149,9 +149,12 @@ fi
 echo "mpirun:    -np ${np} ${hosts[*]-}" | tee -a run_info.txt
 started=$(date +%s)
 status=0
-mpirun -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="${threads}" SPEED > speed.out 2>&1 || status=$?
+mpirun --display-map -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="${threads}" SPEED > speed.out 2>&1 || status=$?
 elapsed=$(( $(date +%s) - started ))
 {
+    # where the ranks ran, from the map mpirun writes at the top of speed.out
+    grep 'Data for node:' speed.out | awk '{ printf "ranks:     %s on %s\n", $NF, $4 }' \
+        || echo "ranks:     no map of mpirun in speed.out: it never launched"
     echo "end:       $(date '+%F %T')"
     echo "elapsed:   ${elapsed}s"
     echo "exit:      ${status}"
