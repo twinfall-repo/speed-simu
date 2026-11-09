@@ -14,6 +14,8 @@ From: rockylinux:9
 # (xdmf, binary, ascii) and SPEED_VTK_STRAIN (1 or 0, default 1).
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
+# SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
+# system's 11: SPEED includes mpif.h, so no MPI Fortran module is involved.
 # ssh is there for mpirun to start orted on the other nodes of a job, inside
 # this same image (see SPEED_LAUNCH_AGENT in apptainer/shell.sh).
 # The %files paths are relative to the folder of the build: build.sh runs it
@@ -43,15 +45,17 @@ From: rockylinux:9
     dnf install -y epel-release
     dnf config-manager --set-enabled crb
     dnf install -y openmpi openmpi-devel metis metis-devel \
-        gcc-gfortran make git zstd vim-enhanced less openssh-clients
+        gcc-toolset-13-gcc-gfortran make git zstd vim-enhanced less openssh-clients
     dnf clean all
     rpm -q openmpi pmix ucx libfabric libpsm2 metis
     export PATH=/usr/lib64/openmpi/bin:${PATH}
+    export OMPI_FC=/opt/rh/gcc-toolset-13/root/usr/bin/gfortran
 
     git clone --depth 1 https://bitbucket.org/ilmaz/speed.git ${SPEED_FOLDER}
     # written to a file: inside the container the clone belongs to root, and
     # git refuses to read a repository of another user (safe.directory)
     git -C ${SPEED_FOLDER} log -1 --format='%H %ad %s' --date=short > /opt/speed-commit.txt
+    echo "compiler: $(mpif90 --version | head -n 1)" >> /opt/speed-commit.txt
 
     for patch in /opt/speed-patches/*.f90; do
         name=$(basename "${patch}")
