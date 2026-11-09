@@ -23,10 +23,14 @@
 # The defaults are a whole node (two AMD EPYC 7413, 48 cores with two hardware
 # threads each, that PBS counts as 96 ncpus, and 503 GB), reserved exclusively
 # (place=excl) so that no other job changes the timings.
+# SPEED_NODES (default 1) is the number of such nodes: SPEED_NCPUS and
+# SPEED_MEM_GB are per node, and mpirun reaches the other nodes by ssh (see
+# apptainer/shell.sh). The memory sampled is that of the first node only.
 # SPEED_NAME is the name of the job and of its log (default speed-simu).
 # SPEED is hybrid MPI and OpenMP: SPEED_THREADS OpenMP threads (default 1) on
 # each of SPEED_NP MPI processes, by default as many as fit on the physical
-# cores, half of SPEED_NCPUS, i.e. SPEED_NCPUS / 2 / SPEED_THREADS. Both reach
+# cores, half of SPEED_NCPUS on each node, i.e.
+# SPEED_NODES * SPEED_NCPUS / 2 / SPEED_THREADS. Both reach
 # run_case.sh through apptainer/shell.sh, which uses SPEED_NP when not given -n.
 
 set -euo pipefail
@@ -35,7 +39,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "${here}/.." && pwd)
 
 case "${1:-}" in
-    -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     "")        echo "no command given" >&2; exit 1 ;;
 esac
 
@@ -43,9 +47,12 @@ logs="${repo}/logs"
 mkdir -p "${logs}"
 
 name="${SPEED_NAME:-speed-simu}"
+nodes="${SPEED_NODES:-1}"
 ncpus="${SPEED_NCPUS:-96}"
 export SPEED_THREADS="${SPEED_THREADS:-1}"
-export SPEED_NP="${SPEED_NP:-$(( ncpus / 2 / SPEED_THREADS ))}"
+# the MPI processes on each node, which PBS writes in PBS_NODEFILE
+per_node=$(( ncpus / 2 / SPEED_THREADS ))
+export SPEED_NP="${SPEED_NP:-$(( nodes * per_node ))}"
 mem_gb="${SPEED_MEM_GB:-500}"
 
 # The job script. What is expanded here is fixed at submission: the log folder,
@@ -88,6 +95,7 @@ human_time() {
 echo "node: \$(hostname)"
 lscpu | grep -E "Model name|Socket|Core|Thread"
 free -g | grep Mem
+echo "nodes: \$(sort -u "\$PBS_NODEFILE" | paste -sd ' ')"
 echo "processes: ${SPEED_NP}, threads per process: ${SPEED_THREADS}"
 
 $(printf '%q ' "${here}/run.sh" "$@") &
@@ -153,5 +161,7 @@ EOF
 
 echo "name: ${name}"
 echo "log:  ${logs}/${name}.<jobid>.log"
-echo "resources: ncpus=${ncpus}, mem=${mem_gb} GB, processes=${SPEED_NP}, threads=${SPEED_THREADS}"
-echo "${job}" | qsub -V -N "${name}" -l "select=1:ncpus=${ncpus}:mem=${mem_gb}gb" -l place=excl -j oe -k oe
+echo "resources: nodes=${nodes}, each ncpus=${ncpus}, mem=${mem_gb} GB, processes=${per_node};" \
+    "in all processes=${SPEED_NP}, threads=${SPEED_THREADS}"
+echo "${job}" | qsub -V -N "${name}" -l "select=${nodes}:ncpus=${ncpus}:mpiprocs=${per_node}:mem=${mem_gb}gb" \
+    -l place=scatter:excl -j oe -k oe

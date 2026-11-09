@@ -25,6 +25,8 @@
 # output/<case>/<run>.tar.zst, a single file to copy off the cluster
 # (tar -I zstd -xf to unpack). zstd runs on all the cores the run had: gzip,
 # on one core, took longer than SPEED itself on the binary VTK output.
+# In a PBS job SPEED runs on the nodes of the job, SPEED_HOSTS, with orted
+# started on the other nodes by SPEED_LAUNCH_AGENT (both from apptainer/shell.sh).
 # SPEED_THREADS (default 1) is the OpenMP threads of each MPI process;
 # SPEED_VTK_FORMAT and SPEED_VTK_STRAIN the output of VTKWRITE (see
 # apptainer/speed.def).
@@ -37,7 +39,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -n) np=$2; shift 2 ;;
         -m) mesh=$2; shift 2 ;;
-        -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
@@ -132,15 +134,22 @@ mkdir -p VTKOUT POST-PROC ${mpifile:+"${mpifile}"} ${monfile:+"${monfile}"}
     fi
     echo "vtk:       format ${SPEED_VTK_FORMAT:-unset (xdmf)}, strain ${SPEED_VTK_STRAIN:-unset (1)}"
     echo "host:      $(hostname)"
+    echo "nodes:     ${SPEED_HOSTS:-this one only, not a PBS job}"
     echo "processes: ${np}"
     echo "threads:   ${threads} per process"
     echo "start:     $(date '+%F %T')"
     echo "files:     $(ls | tr '\n' ' ')"
 } | tee run_info.txt
 
+# on the nodes of the job: a single one is this one, more are reached by ssh
+hosts=()
+if [ -n "${SPEED_HOSTS:-}" ]; then
+    hosts=(--host "${SPEED_HOSTS}" --launch-agent "${SPEED_LAUNCH_AGENT}")
+fi
+echo "mpirun:    -np ${np} ${hosts[*]-}" | tee -a run_info.txt
 started=$(date +%s)
 status=0
-mpirun -np "${np}" -x OMP_NUM_THREADS="${threads}" SPEED > speed.out 2>&1 || status=$?
+mpirun -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="${threads}" SPEED > speed.out 2>&1 || status=$?
 elapsed=$(( $(date +%s) - started ))
 {
     echo "end:       $(date '+%F %T')"

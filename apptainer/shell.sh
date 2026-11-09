@@ -24,6 +24,10 @@
 #   SPEED_VTK_FORMAT, SPEED_VTK_STRAIN
 #                   output format of VTKWRITE, see apptainer/speed.def
 #
+# In a PBS job, the container gets the job's nodes (SPEED_HOSTS) and the
+# command that starts orted in this image on the other nodes
+# (SPEED_LAUNCH_AGENT), which run_case.sh passes to mpirun.
+#
 # Runs with --containall --no-home --writable-tmpfs: nothing of the host is
 # visible except the binds, and writes inside the image itself land in a
 # throwaway tmpfs overlay that is both small and discarded on exit. Results
@@ -50,7 +54,7 @@ speed_shell() {
             -d|--data)      data=$2;   shift 2 ;;
             -b|--bind)      extra_binds+=("$2"); shift 2 ;;
             -a|--apptainer) apptainer_bin=$2; shift 2 ;;
-            -h|--help)      sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
+            -h|--help)      sed -n '2,37p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
             --)             shift; break ;;
             *)              echo "unknown option: $1 (use -- before a command)" >&2; return 1 ;;
         esac
@@ -80,6 +84,8 @@ speed_shell() {
         echo "cannot make the output folder ${output} -- is it somewhere you can write?" >&2
         return 1
     }
+    # absolute: the other nodes of a job start it from their home
+    image=$(realpath "${image}")
     output=$(cd "${output}" && pwd)
     data=$(cd "${data}" && pwd)
 
@@ -90,6 +96,11 @@ speed_shell() {
     [ "${data}" != "${repo}/data" ] && binds+=("${data}:/workspace/data")
     for bind in ${extra_binds[@]+"${extra_binds[@]}"}; do
         binds+=("${bind}")
+    done
+    # the fast network (InfiniBand, Omni-Path), hidden by the minimal /dev of
+    # --containall, and the ssh keys, with which mpirun reaches the other nodes
+    for bind in /dev/infiniband /dev/hfi1_* "${HOME}/.ssh"; do
+        [ -e "${bind}" ] && binds+=("${bind}")
     done
     for bind in "${binds[@]}"; do
         bind_args+=(--bind "${bind}")
@@ -111,6 +122,15 @@ speed_shell() {
     [ -n "${SPEED_VTK_FORMAT:-}" ] && isolation+=(--env "SPEED_VTK_FORMAT=${SPEED_VTK_FORMAT}")
     [ -n "${SPEED_VTK_STRAIN:-}" ] && isolation+=(--env "SPEED_VTK_STRAIN=${SPEED_VTK_STRAIN}")
     echo "processes: ${SPEED_NP:-unset}, threads per process: ${SPEED_THREADS:-1}"
+
+    # In a PBS job, the nodes as host:slots, for mpirun in the container
+    # (PBS_NODEFILE itself is not visible there), and how mpirun starts orted
+    # on the other nodes: through ssh, in this same image with the same binds
+    if [ -n "${PBS_NODEFILE:-}" ]; then
+        isolation+=(--env "SPEED_HOSTS=$(sort "${PBS_NODEFILE}" | uniq -c | awk '{ printf "%s%s:%s", sep, $2, $1; sep = "," }')")
+        isolation+=(--env "SPEED_LAUNCH_AGENT=$(command -v "${apptainer_bin}") exec ${isolation[*]} ${bind_args[*]} ${image} orted")
+        echo "nodes:   $(sort -u "${PBS_NODEFILE}" | paste -sd ' ')"
+    fi
 
     if [ $# -eq 0 ]; then
         "${apptainer_bin}" shell "${isolation[@]}" "${bind_args[@]}" "${image}"

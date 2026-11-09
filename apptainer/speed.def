@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: ubuntu:24.04
+From: rockylinux:9
 
 # Image for speed-simu: the toolchain (gfortran, OpenMPI, METIS) and SPEED
 # itself, cloned from https://bitbucket.org/ilmaz/speed and compiled at build
@@ -12,6 +12,10 @@ From: ubuntu:24.04
 # compiling. WRITE_VTU_TIMEDATA.f90 writes the VTKWRITE output as XDMF plus raw
 # binary (default) or binary VTU, chosen at run time by SPEED_VTK_FORMAT
 # (xdmf, binary, ascii) and SPEED_VTK_STRAIN (1 or 0, default 1).
+# Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
+# psm2 are the cluster's own packages, so the network stack matches its nodes.
+# ssh is there for mpirun to start orted on the other nodes of a job, inside
+# this same image (see SPEED_LAUNCH_AGENT in apptainer/shell.sh).
 # The %files paths are relative to the folder of the build: build.sh runs it
 # from apptainer/.
 
@@ -24,7 +28,8 @@ From: ubuntu:24.04
 
 %environment
     export SPEED_FOLDER=/opt/speed
-    export PATH=${SPEED_FOLDER}:${PATH}
+    export PATH=${SPEED_FOLDER}:/usr/lib64/openmpi/bin:${PATH}
+    export LD_LIBRARY_PATH=/usr/lib64/openmpi/lib
     export PROJECT_DIR=/workspace
     # the shared memory transport of OpenMPI tries CMA, which needs ptrace
     # between the ranks and fails in a container; plain copies through /dev/shm
@@ -32,16 +37,16 @@ From: ubuntu:24.04
 
 %post
     set -e
-    export DEBIAN_FRONTEND=noninteractive
     SPEED_FOLDER=/opt/speed
 
-    apt-get update -y
-    apt-get install -y --no-install-recommends \
-        openmpi-bin openmpi-common libopenmpi-dev \
-        libmetis5 libmetis-dev \
-        build-essential gfortran make git ca-certificates vim less zstd
-    apt-get clean
-    rm -rf /var/lib/apt/lists/*
+    # METIS is in EPEL, which needs CRB
+    dnf install -y epel-release
+    dnf config-manager --set-enabled crb
+    dnf install -y openmpi openmpi-devel metis metis-devel \
+        gcc-gfortran make git zstd vim-enhanced less openssh-clients
+    dnf clean all
+    rpm -q openmpi pmix ucx libfabric libpsm2 metis
+    export PATH=/usr/lib64/openmpi/bin:${PATH}
 
     git clone --depth 1 https://bitbucket.org/ilmaz/speed.git ${SPEED_FOLDER}
     # written to a file: inside the container the clone belongs to root, and
@@ -65,7 +70,7 @@ From: ubuntu:24.04
     make -C ${SPEED_FOLDER} -j "$(nproc)" \
         OPT_FLAGS=-O3 \
         METIS_INCLUDE_FLAGS=-I/usr/include \
-        "METIS_LD_FLAGS=-L/usr/lib/x86_64-linux-gnu -lmetis"
+        "METIS_LD_FLAGS=-L/usr/lib64 -lmetis"
     rm -f ${SPEED_FOLDER}/*.o ${SPEED_FOLDER}/*.mod
 
     # mount points for the bind-mounted repository, data and output

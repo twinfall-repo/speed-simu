@@ -28,6 +28,17 @@ source apptainer/build.sh -f         # rebuild with the latest SPEED
 ```bash
 source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source   # here, 4 processes
 apptainer/submit.sh -- bash run_case.sh cases/rialba_source               # PBS job, a whole node
+SPEED_NODES=2 apptainer/submit.sh -- bash run_case.sh cases/rialba_source # PBS job, two whole nodes
+```
+
+On more nodes, `mpirun` in the container reaches the others by ssh, which
+must work without a password between the nodes (once, on the cluster):
+
+```bash
+ls ~/.ssh/id_ed25519 || ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+ssh-keyscan node{1..10} >> ~/.ssh/known_hosts
+ssh -o BatchMode=yes node2 hostname
 ```
 
 The run is in `output/rialba_source/<run>/` and archived in
