@@ -153,7 +153,7 @@ mpirun --display-map -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="$
 elapsed=$(( $(date +%s) - started ))
 {
     # where the ranks ran, from the map mpirun writes at the top of speed.out
-    grep 'Data for node:' speed.out | awk '{ printf "ranks:     %s on %s\n", $NF, $4 }' \
+    grep 'Data for node:' speed.out | awk '!seen[$4]++ { printf "ranks:     %s on %s\n", $NF, $4 }' \
         || echo "ranks:     no map of mpirun in speed.out: it never launched"
     echo "end:       $(date '+%F %T')"
     echo "elapsed:   ${elapsed}s"
