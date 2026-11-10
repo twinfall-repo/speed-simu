@@ -1,0 +1,9 @@
+GRIDFILE   rialba_source_coarse
+MATFILE    rialba_source_coarse
+MPIFILE    FILES_MPI
+MONFILE    MONITOR
+DAMPING    2
+OPTIOUT    1 1 1 0 0 0
+TIMESTEP   0.0003
+STOPTIME   10
+TMONITOR   10
