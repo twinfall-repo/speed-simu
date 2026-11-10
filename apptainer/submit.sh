@@ -29,7 +29,7 @@
 # SPEED_PPN is the MPI processes on each node (default SPEED_NCPUS / 2 /
 # SPEED_THREADS, its physical cores): fewer than those, e.g. to compare 48
 # processes on one node with 24 on each of two, still on whole nodes. Asking
-# fewer SPEED_NCPUS instead lets PBS pick nodes of another kind (kurama).
+# fewer SPEED_NCPUS instead lets PBS pick kurama, the GPU node, which fails.
 # SPEED_NAME is the name of the job and of its log (default speed-simu).
 # SPEED is hybrid MPI and OpenMP: SPEED_THREADS OpenMP threads (default 1) on
 # each of SPEED_NP MPI processes, by default as many as fit on the physical
