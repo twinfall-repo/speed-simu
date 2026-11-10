@@ -18,14 +18,17 @@
 #   -m MESH   mesh to use instead of the case's <GRIDFILE>.mesh
 #   -c FRACTION
 #             time step at FRACTION (0 < FRACTION <= 1) of SPEED's deltat CFL,
-#             instead of the case's TIMESTEP
+#             instead of the case's TIMESTEP (default 0.24); -c case keeps the
+#             case's TIMESTEP
 #
 # SPEED's deltat CFL is h_min / vp, h_min the smallest distance between two GLL
 # nodes of an element: Courant number 1 on the GLL spacing, above the
-# stability limit of the leap-frog scheme. -c runs SPEED a first time, up to the
+# stability limit of the leap-frog scheme. Unless -c case, SPEED runs first up to the
 # end of its setup (SETUPONL T, output in speed_setup.out), reads deltat CFL
 # there and writes TIMESTEP = FRACTION * deltat CFL in the SPEED.input of the run
-# (the case's own is kept as SPEED.input.case), then runs SPEED.
+# (the case's own is kept as SPEED.input.case), then runs SPEED. The default
+# 0.24 is the largest that SPEED does not warn about: above 25% it warns that the
+# absorbing boundaries may not work well, and its deltat CFL has 4 digits only.
 #
 # The case folder is never written: its files are copied to
 # output/<case>/<run>, with the mesh linked as <GRIDFILE>.mesh, and SPEED runs
@@ -45,13 +48,13 @@ set -euo pipefail
 
 np="${SPEED_NP:-1}"
 mesh=
-cfl_fraction=
+cfl_fraction=0.24
 while [ $# -gt 0 ]; do
     case "$1" in
         -n) np=$2; shift 2 ;;
         -m) mesh=$2; shift 2 ;;
         -c) cfl_fraction=$2; shift 2 ;;
-        -h|--help) sed -n '2,43p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,47p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
@@ -64,8 +67,8 @@ if ! [[ "${np}" =~ ^[1-9][0-9]*$ ]]; then
     echo "the number of MPI processes must be a positive integer, not '${np}'" >&2
     exit 1
 fi
-if [ -n "${cfl_fraction}" ] && ! awk -v f="${cfl_fraction}" 'BEGIN { exit !(f + 0 == f && f > 0 && f <= 1) }'; then
-    echo "the fraction of deltat CFL must be a number in (0, 1], not '${cfl_fraction}'" >&2
+if [ "${cfl_fraction}" != case ] && ! awk -v f="${cfl_fraction}" 'BEGIN { exit !(f + 0 == f && f > 0 && f <= 1) }'; then
+    echo "the fraction of deltat CFL must be a number in (0, 1] or case, not '${cfl_fraction}'" >&2
     exit 1
 fi
 threads="${SPEED_THREADS:-1}"
@@ -165,7 +168,10 @@ fi
 echo "mpirun:    -np ${np} ${hosts[*]-}" | tee -a run_info.txt
 speed() { mpirun --display-map -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="${threads}" SPEED; }
 
-if [ -n "${cfl_fraction}" ]; then
+if [ "${cfl_fraction}" = case ]; then
+    echo "cfl:       TIMESTEP of the case, $(awk '$1 == "TIMESTEP" { print $2; exit }' SPEED.input) (-c case)" \
+        | tee -a run_info.txt
+else
     # the setup run: no FAILCFL, which would stop it on the case's own TIMESTEP
     mv SPEED.input SPEED.input.case
     { grep -vE '^(SETUPONL|FAILCFL)' SPEED.input.case; echo "SETUPONL T"; } > SPEED.input

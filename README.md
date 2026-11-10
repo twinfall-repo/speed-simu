@@ -41,6 +41,10 @@ ssh-keyscan node{1..10} >> ~/.ssh/known_hosts
 ssh -o BatchMode=yes node2 hostname
 ```
 
+The time step is 24% of SPEED's deltat CFL, the most it takes without
+warnings, found by a first setup-only run: `-c FRACTION` for another fraction,
+`-c case` for the case's own `TIMESTEP` (see `bash run_case.sh -h`).
+
 The run is in `output/rialba_source/<run>/` and archived in
 `output/rialba_source/<run>.tar.zst`; `run_info.txt` there says what was run,
 `speed.out` is SPEED's output. The PBS log is in `logs/`.
