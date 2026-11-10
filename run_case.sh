@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run SPEED on one case, inside the container, in a run folder of its own:
 #
-#     bash run_case.sh [-n NP] [-m MESH] CASE_DIR
+#     bash run_case.sh [-n NP] [-m MESH] [-c FRACTION] CASE_DIR
 #     source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source
 #     apptainer/submit.sh -- bash run_case.sh cases/rialba_source
 #     apptainer/submit.sh -d ../dtm_voxelization/output -- \
@@ -16,6 +16,16 @@
 # Options:
 #   -n NP     MPI processes (default: $SPEED_NP, then 1)
 #   -m MESH   mesh to use instead of the case's <GRIDFILE>.mesh
+#   -c FRACTION
+#             time step at FRACTION (0 < FRACTION <= 1) of SPEED's deltat CFL,
+#             instead of the case's TIMESTEP
+#
+# SPEED's deltat CFL is h_min / vp, h_min the smallest distance between two GLL
+# nodes of an element: Courant number 1 on the GLL spacing, above the
+# stability limit of the leap-frog scheme. -c runs SPEED a first time, up to the
+# end of its setup (SETUPONL T, output in speed_setup.out), reads deltat CFL
+# there and writes TIMESTEP = FRACTION * deltat CFL in the SPEED.input of the run
+# (the case's own is kept as SPEED.input.case), then runs SPEED.
 #
 # The case folder is never written: its files are copied to
 # output/<case>/<run>, with the mesh linked as <GRIDFILE>.mesh, and SPEED runs
@@ -35,21 +45,27 @@ set -euo pipefail
 
 np="${SPEED_NP:-1}"
 mesh=
+cfl_fraction=
 while [ $# -gt 0 ]; do
     case "$1" in
         -n) np=$2; shift 2 ;;
         -m) mesh=$2; shift 2 ;;
-        -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -c) cfl_fraction=$2; shift 2 ;;
+        -h|--help) sed -n '2,43p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
 done
 if [ $# -ne 1 ]; then
-    echo "usage: bash run_case.sh [-n NP] [-m MESH] CASE_DIR" >&2
+    echo "usage: bash run_case.sh [-n NP] [-m MESH] [-c FRACTION] CASE_DIR" >&2
     exit 1
 fi
 if ! [[ "${np}" =~ ^[1-9][0-9]*$ ]]; then
     echo "the number of MPI processes must be a positive integer, not '${np}'" >&2
+    exit 1
+fi
+if [ -n "${cfl_fraction}" ] && ! awk -v f="${cfl_fraction}" 'BEGIN { exit !(f + 0 == f && f > 0 && f <= 1) }'; then
+    echo "the fraction of deltat CFL must be a number in (0, 1], not '${cfl_fraction}'" >&2
     exit 1
 fi
 threads="${SPEED_THREADS:-1}"
@@ -147,14 +163,38 @@ if [ -n "${SPEED_HOSTS:-}" ]; then
     hosts=(--host "${SPEED_HOSTS}" --launch-agent "${SPEED_LAUNCH_AGENT}")
 fi
 echo "mpirun:    -np ${np} ${hosts[*]-}" | tee -a run_info.txt
+speed() { mpirun --display-map -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="${threads}" SPEED; }
+
+if [ -n "${cfl_fraction}" ]; then
+    # the setup run: no FAILCFL, which would stop it on the case's own TIMESTEP
+    mv SPEED.input SPEED.input.case
+    { grep -vE '^(SETUPONL|FAILCFL)' SPEED.input.case; echo "SETUPONL T"; } > SPEED.input
+    started=$(date +%s)
+    speed > speed_setup.out 2>&1 || true
+    dt_cfl=$(sed -n 's/.*deltat CFL = *\([0-9.Ee+-]*\).*/\1/p' speed_setup.out | head -n 1)
+    if ! grep -q 'Set-up ended' speed_setup.out || [ -z "${dt_cfl}" ]; then
+        echo "the setup run for -c did not give deltat CFL; last lines of ${run_dir}/speed_setup.out:" >&2
+        tail -n 30 speed_setup.out >&2
+        exit 1
+    fi
+    dt=$(awk -v c="${dt_cfl}" -v f="${cfl_fraction}" 'BEGIN { printf "%.6e", c * f }')
+    awk -v dt="${dt}" '$1 == "TIMESTEP" { $0 = "TIMESTEP   " dt; done = 1 } { print }
+        END { if (!done) print "TIMESTEP   " dt }' SPEED.input.case > SPEED.input
+    echo "cfl:       deltat CFL ${dt_cfl}, fraction ${cfl_fraction}: TIMESTEP ${dt}" \
+        "(case's own $(awk '$1 == "TIMESTEP" { print $2; exit }' SPEED.input.case)), setup run $(( $(date +%s) - started ))s" \
+        | tee -a run_info.txt
+fi
+
 started=$(date +%s)
 status=0
-mpirun --display-map -np "${np}" ${hosts[@]+"${hosts[@]}"} -x OMP_NUM_THREADS="${threads}" SPEED > speed.out 2>&1 || status=$?
+speed > speed.out 2>&1 || status=$?
 elapsed=$(( $(date +%s) - started ))
 {
     # where the ranks ran, from the map mpirun writes at the top of speed.out
     grep 'Data for node:' speed.out | awk '!seen[$4]++ { printf "ranks:     %s on %s\n", $NF, $4 }' \
         || echo "ranks:     no map of mpirun in speed.out: it never launched"
+    # SPEED replaces the time step it was given in some cases (see GET_CFL.f90)
+    grep -m 1 'deltat chosen' speed.out | sed 's/^ */timestep:  SPEED REPLACED THE TIME STEP: /' || true
     echo "end:       $(date '+%F %T')"
     echo "elapsed:   ${elapsed}s"
     echo "exit:      ${status}"
