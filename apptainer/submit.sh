@@ -26,6 +26,10 @@
 # SPEED_NODES (default 1) is the number of such nodes: SPEED_NCPUS and
 # SPEED_MEM_GB are per node, and mpirun reaches the other nodes by ssh (see
 # apptainer/shell.sh). The memory sampled is that of the first node only.
+# SPEED_PPN is the MPI processes on each node (default SPEED_NCPUS / 2 /
+# SPEED_THREADS, its physical cores): fewer than those, e.g. to compare 48
+# processes on one node with 24 on each of two, still on whole nodes. Asking
+# fewer SPEED_NCPUS instead lets PBS pick nodes of another kind (kurama).
 # SPEED_NAME is the name of the job and of its log (default speed-simu).
 # SPEED is hybrid MPI and OpenMP: SPEED_THREADS OpenMP threads (default 1) on
 # each of SPEED_NP MPI processes, by default as many as fit on the physical
@@ -39,7 +43,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "${here}/.." && pwd)
 
 case "${1:-}" in
-    -h|--help) sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     "")        echo "no command given" >&2; exit 1 ;;
 esac
 
@@ -51,7 +55,7 @@ nodes="${SPEED_NODES:-1}"
 ncpus="${SPEED_NCPUS:-96}"
 export SPEED_THREADS="${SPEED_THREADS:-1}"
 # the MPI processes on each node, which PBS writes in PBS_NODEFILE
-per_node=$(( ncpus / 2 / SPEED_THREADS ))
+per_node="${SPEED_PPN:-$(( ncpus / 2 / SPEED_THREADS ))}"
 export SPEED_NP="${SPEED_NP:-$(( nodes * per_node ))}"
 mem_gb="${SPEED_MEM_GB:-500}"
 
