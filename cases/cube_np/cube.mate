@@ -1,0 +1,9 @@
+# 5x5x5 cube of unit cells, to compare runs on different numbers of processes
+# MATE  BLOCKID  DEGREE  RHO  VS  VP  QS  QP
+MATE 1 2 1 1 2 10 10
+# tag 2: bottom and sides, absorbing; top free
+ABSO 2
+PLOZ 99 2.5 2.5 5 -1
+# Ricker, a = (pi fp)^2 with fp = 1, t0 = 1.5
+FUNC 99 1 9.87 1.5
+FMAX 1
