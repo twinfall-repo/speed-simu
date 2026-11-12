@@ -21,8 +21,6 @@
 #                   folder of dtm_voxelization, to run on the meshes it writes
 #   SPEED_NP        MPI processes of run_case.sh, when it is not given -n
 #   SPEED_THREADS   OpenMP threads of each MPI process (default 1)
-#   SPEED_VTK_FORMAT, SPEED_VTK_STRAIN
-#                   output format of VTKWRITE, see apptainer/speed.def
 #
 # In a PBS job, the container gets the job's nodes (SPEED_HOSTS) and the
 # command that starts orted in this image on the other nodes
@@ -54,7 +52,7 @@ speed_shell() {
             -d|--data)      data=$2;   shift 2 ;;
             -b|--bind)      extra_binds+=("$2"); shift 2 ;;
             -a|--apptainer) apptainer_bin=$2; shift 2 ;;
-            -h|--help)      sed -n '2,37p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
+            -h|--help)      sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
             --)             shift; break ;;
             *)              echo "unknown option: $1 (use -- before a command)" >&2; return 1 ;;
         esac
@@ -119,8 +117,6 @@ speed_shell() {
     [ -n "${PBS_JOBID:-}" ] && isolation+=(--env "PBS_JOBID=${PBS_JOBID}")
     [ -n "${SPEED_NP:-}" ] && isolation+=(--env "SPEED_NP=${SPEED_NP}")
     isolation+=(--env "SPEED_THREADS=${SPEED_THREADS:-1}")
-    [ -n "${SPEED_VTK_FORMAT:-}" ] && isolation+=(--env "SPEED_VTK_FORMAT=${SPEED_VTK_FORMAT}")
-    [ -n "${SPEED_VTK_STRAIN:-}" ] && isolation+=(--env "SPEED_VTK_STRAIN=${SPEED_VTK_STRAIN}")
     echo "processes: ${SPEED_NP:-unset}, threads per process: ${SPEED_THREADS:-1}"
 
     # In a PBS job, the nodes as host:slots, for mpirun in the container

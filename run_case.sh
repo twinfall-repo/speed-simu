@@ -40,9 +40,9 @@
 # on one core, took longer than SPEED itself on the binary VTK output.
 # In a PBS job SPEED runs on the nodes of the job, SPEED_HOSTS, with orted
 # started on the other nodes by SPEED_LAUNCH_AGENT (both from apptainer/shell.sh).
-# SPEED_THREADS (default 1) is the OpenMP threads of each MPI process;
-# SPEED_VTK_FORMAT and SPEED_VTK_STRAIN the output of VTKWRITE (see
-# apptainer/speed.def).
+# SPEED_THREADS (default 1) is the OpenMP threads of each MPI process.
+# The format of the VTKWRITE output is on its line of SPEED.input, e.g.
+# VTKWRITE T 100 XDMF NOSTRAIN (see apptainer/speed.def).
 
 set -euo pipefail
 
@@ -54,7 +54,7 @@ while [ $# -gt 0 ]; do
         -n) np=$2; shift 2 ;;
         -m) mesh=$2; shift 2 ;;
         -c) cfl_fraction=$2; shift 2 ;;
-        -h|--help) sed -n '2,47p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,45p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
@@ -151,7 +151,7 @@ mkdir -p VTKOUT POST-PROC ${mpifile:+"${mpifile}"} ${monfile:+"${monfile}"}
     else
         echo "speed:     unknown, /opt/speed-commit.txt not there: not in the image?"
     fi
-    echo "vtk:       format ${SPEED_VTK_FORMAT:-unset (xdmf)}, strain ${SPEED_VTK_STRAIN:-unset (1)}"
+    echo "vtk:       $(grep -m1 '^ *VTKWRITE' "${header}" || echo 'none, no VTKWRITE line')"
     echo "host:      $(hostname)"
     echo "nodes:     ${SPEED_HOSTS:-this one only, not a PBS job}"
     echo "processes: ${np}"

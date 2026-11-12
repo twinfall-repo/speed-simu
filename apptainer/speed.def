@@ -9,9 +9,10 @@ From: rockylinux:9
 # Only a new version of SPEED, or of a patch, does.
 #
 # apptainer/patches/*.f90 replace the files of the same name in SPEED before
-# compiling. WRITE_VTU_TIMEDATA.f90 writes the VTKWRITE output as XDMF plus raw
-# binary (default) or binary VTU, chosen at run time by SPEED_VTK_FORMAT
-# (xdmf, binary, ascii) and SPEED_VTK_STRAIN (1 or 0, default 1).
+# compiling. WRITE_VTU_TIMEDATA.f90 writes the VTKWRITE output in the format
+# named on its line of SPEED.input: VTKWRITE T 100 XDMF (XDMF plus raw binary,
+# the default), VTUBINARY or VTUASCII (the original .vtu), and NOSTRAIN after
+# it for the displacement only. The original SPEED ignores these words.
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
 # SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
