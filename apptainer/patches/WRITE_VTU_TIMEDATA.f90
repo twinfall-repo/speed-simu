@@ -19,17 +19,25 @@
 !> @brief Field output for ParaView (VTKWRITE T n), drop-in replacement of the original
 !!        WRITE_VTU_TIMEDATA.f90 (same subroutines, same arguments: nothing else in SPEED changes).
 !!
-!! Three formats, chosen at run time with the environment variable SPEED_VTK_FORMAT:
-!!   xdmf    (default) VTKOUT/SPEED.xmf + SPEED_elements.xmf + raw binary files. Same data as the original
-!!           (all GLL nodes, same node order, Disp and Strain, time = step * dt), but the mesh is written once
-!!           (mesh_points.bin, mesh_cells.bin, mesh_elements.bin) and each snapshot only holds the fields
-!!           (Disp_<step>.bin float32 (np,3), Strain_<step>.bin float32 (np,6)). Needs no library.
-!!           SPEED.xmf: each spectral element as (nn-1)^3 linear hexahedra through its GLL nodes
-!!           (ParaView's XDMF reader has no reliable Lagrange hexahedron);
-!!           SPEED_elements.xmf: the spectral elements (8 corners), i.e. the grid of the mesh file.
-!!   binary  exactly the files of the original (.vtu / .pvtu / .pvd, Lagrange cells), raw binary instead of text.
-!!   ascii   the original text files.
-!! SPEED_VTK_STRAIN=0 leaves the strain out (as the original, it is written by default).
+!! Usage in SPEED.input (the format word is written explicitly; the original SPEED reads only "T 100"
+!! from this line and ignores the extra words, so the same SPEED.input works with both versions):
+!!
+!!   VTKWRITE  T 100 XDMF                  XDMF, with strain
+!!   VTKWRITE  T 100 XDMF NOSTRAIN         XDMF, displacement only
+!!
+!!   VTKWRITE  T 100 VTUBINARY             original .vtu/.pvtu/.pvd, binary
+!!   VTKWRITE  T 100 VTUBINARY NOSTRAIN    original .vtu/.pvtu/.pvd, binary, displacement only
+!!
+!!   VTKWRITE  T 100 VTUASCII              original text .vtu
+!!   VTKWRITE  T 100 VTUASCII NOSTRAIN     original text .vtu, displacement only
+!!
+!! XDMF: VTKOUT/SPEED.xmf + SPEED_elements.xmf + raw binary files. Same data as the original (all GLL
+!! nodes, same node order, Disp and Strain, time = step * dt), but the mesh is written once
+!! (mesh_points.bin, mesh_cells.bin, mesh_elements.bin) and each snapshot only holds the fields
+!! (Disp_<step>.bin float32 (np,3), Strain_<step>.bin float32 (np,6)).
+!! SPEED.xmf shows each spectral element as (nn-1)^3 linear hexahedra through its GLL nodes (ParaView's
+!! XDMF reader has no reliable Lagrange hexahedron); SPEED_elements.xmf shows the spectral elements.
+!! VTUBINARY / VTUASCII: the files of the original (.vtu / .pvtu / .pvd, Lagrange cells).
 !! Fix: the original clamped the strain with "if (strain < 1e-29) strain = 1e-29", which turned every
 !! negative strain into +1e-29; now only the magnitude is limited to the float32 range.
 !!
@@ -51,10 +59,14 @@ module speed_vtk_out
 contains
 
     subroutine vtk_settings()
+        ! 1. words after "VTKWRITE T n" in SPEED.input: XDMF | VTUBINARY | VTUASCII, and NOSTRAIN | STRAIN
+        ! 2. if SPEED.input says nothing: the environment (SPEED_VTK_FORMAT, SPEED_VTK_STRAIN)
+        ! 3. else XDMF with strain
         character(len=32) :: s
-        integer :: l, st
+        integer :: l, st, fmode, fstrain
         if (vtk_mode .ge. 0) return
         vtk_mode = 2
+        vtk_strain = .true.                             ! as the original: strain and displacement
         call get_environment_variable('SPEED_VTK_FORMAT', s, l, st)
         if (st .eq. 0 .and. l .gt. 0) then
             select case (s(1:1))
@@ -67,12 +79,80 @@ contains
             end select
         endif
         call get_environment_variable('SPEED_VTK_STRAIN', s, l, st)
-        if (st .eq. 0 .and. l .gt. 0) then
-            vtk_strain = index('1yYtT', s(1:1)) .gt. 0
-        else
-            vtk_strain = .true.                         ! as the original: strain and displacement
-        endif
+        if (st .eq. 0 .and. l .gt. 0) vtk_strain = index('1yYtT', s(1:1)) .gt. 0
+        call vtk_read_input(fmode, fstrain)
+        if (fmode .ge. 0) vtk_mode = fmode
+        if (fstrain .ge. 0) vtk_strain = (fstrain .eq. 1)
     end subroutine vtk_settings
+
+    !> format words on the VTKWRITE line of SPEED.input, e.g.  "VTKWRITE  T 100 XDMF NOSTRAIN".
+    !! SPEED itself reads only "T 100" from this line (list-directed read), so the original SPEED
+    !! ignores the extra words and the same SPEED.input works with both versions.
+    subroutine vtk_read_input(fmode, fstrain)
+        integer, intent(out) :: fmode, fstrain
+        character(len=512) :: line, up
+        integer :: u, ios, i, j, n, m
+        fmode = -1
+        fstrain = -1
+        open(newunit=u, file='SPEED.input', status='old', action='read', iostat=ios)
+        if (ios .ne. 0) return
+        do
+            read(u, '(a)', iostat=ios) line
+            if (ios .ne. 0) exit
+            up = vtk_upper(adjustl(line))
+            if (up(1:8) .ne. 'VTKWRITE') cycle
+            m = len_trim(up)
+            i = 1
+            n = 0
+            do while (i .le. m)
+                if (vtk_blank(up(i:i))) then
+                    i = i + 1
+                    cycle
+                endif
+                j = i
+                do while (j .le. m)
+                    if (vtk_blank(up(j:j))) exit
+                    j = j + 1
+                enddo
+                n = n + 1                                ! word n: VTKWRITE, T, n, then the options
+                if (n .gt. 3) then
+                    select case (up(i:j-1))
+                    case ('XDMF')
+                        fmode = 2
+                    case ('VTUBINARY')
+                        fmode = 1
+                    case ('VTUASCII')
+                        fmode = 0
+                    case ('NOSTRAIN')
+                        fstrain = 0
+                    case ('STRAIN')
+                        fstrain = 1
+                    case default
+                        write(*,'(A)') 'VTK: unknown word on the VTKWRITE line: '//up(i:j-1)// &
+                                       ' (use XDMF, VTUBINARY, VTUASCII, NOSTRAIN)'
+                    end select
+                endif
+                i = j
+            enddo
+        enddo
+        close(u)
+    end subroutine vtk_read_input
+
+    logical function vtk_blank(c)
+        character(len=1), intent(in) :: c
+        vtk_blank = (c .eq. ' ' .or. c .eq. char(9) .or. c .eq. char(13))
+    end function vtk_blank
+
+    function vtk_upper(s) result(t)
+        character(len=*), intent(in) :: s
+        character(len=len(s)) :: t
+        integer :: i, k
+        t = s
+        do i = 1, len(s)
+            k = iachar(s(i:i))
+            if (k .ge. 97 .and. k .le. 122) t(i:i) = achar(k - 32)
+        enddo
+    end function vtk_upper
 
     function i2s(i) result(s)
         integer(kind=8), intent(in) :: i
@@ -309,7 +389,7 @@ end module speed_vtk_out
 
 
     !-----------------------------------------------------------------------------------------------
-    !> the original text format (strain clamp fixed; strain only with SPEED_VTK_STRAIN=1)
+    !> the original text format (strain clamp fixed; no strain with NOSTRAIN)
     subroutine VTK_WRITE_ASCII(nn_loc, cs_nnz_loc, cs_loc, xx_loc, yy_loc, zz_loc, mpi_id, nmpi, &
                                nn, vtk_numbering_map, its, strain, disp)
       use speed_vtk_out
