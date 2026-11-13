@@ -31,6 +31,9 @@
 # processes on one node with 24 on each of two, still on whole nodes. Asking
 # fewer SPEED_NCPUS instead lets PBS pick kurama, the GPU node, which fails.
 # SPEED_NAME is the name of the job and of its log (default speed-simu).
+# SPEED_EXCL=0 shares the node with other jobs (place=scatter) instead of
+# reserving it (default 1, place=scatter:excl): with fewer SPEED_NCPUS and
+# SPEED_MEM_GB the job then starts on the cores a busy node has left.
 # SPEED_WALLTIME is the job's walltime, e.g. 12:00:00 (default none): with it the
 # scheduler can fit the job in the gaps of the queue, and kills it past that time.
 # SPEED is hybrid MPI and OpenMP: SPEED_THREADS OpenMP threads (default 1) on
@@ -45,7 +48,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "${here}/.." && pwd)
 
 case "${1:-}" in
-    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,43p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     "")        echo "no command given" >&2; exit 1 ;;
 esac
 
@@ -60,6 +63,8 @@ export SPEED_THREADS="${SPEED_THREADS:-1}"
 per_node="${SPEED_PPN:-$(( ncpus / 2 / SPEED_THREADS ))}"
 export SPEED_NP="${SPEED_NP:-$(( nodes * per_node ))}"
 mem_gb="${SPEED_MEM_GB:-500}"
+place=scatter:excl
+[ "${SPEED_EXCL:-1}" = 0 ] && place=scatter
 walltime=()
 [ -n "${SPEED_WALLTIME:-}" ] && walltime=(-l "walltime=${SPEED_WALLTIME}")
 
@@ -172,5 +177,6 @@ echo "log:  ${logs}/${name}.<jobid>.log"
 echo "resources: nodes=${nodes}, each ncpus=${ncpus}, mem=${mem_gb} GB, processes=${per_node};" \
     "in all processes=${SPEED_NP}, threads=${SPEED_THREADS}"
 echo "walltime: ${SPEED_WALLTIME:-none}"
+echo "place: ${place}"
 echo "${job}" | qsub -V -N "${name}" -l "select=${nodes}:ncpus=${ncpus}:mpiprocs=${per_node}:mem=${mem_gb}gb" \
-    -l place=scatter:excl ${walltime[@]+"${walltime[@]}"} -j oe -k oe
+    -l "place=${place}" ${walltime[@]+"${walltime[@]}"} -j oe -k oe
