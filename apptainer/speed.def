@@ -13,6 +13,11 @@ From: rockylinux:9
 # named on its line of SPEED.input: VTKWRITE T 100 XDMF (XDMF plus raw binary,
 # the default), VTUBINARY or VTUASCII (the original .vtu), and NOSTRAIN after
 # it for the displacement only. The original SPEED ignores these words.
+# MAKE_SPX_CON.f90 takes a face as shared by two elements only when they share
+# its 4 corners, not 3: at the tip of a crack of dtm_voxelization two elements
+# share 3 corners of a face and not the 4th, and the original copied the whole
+# face across, corrupted the connectivity and looped for ever after "Making
+# Spectral connectivity".
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
 # SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
