@@ -1,10 +1,12 @@
 # SPEED material file of the whole Rialba mesh at 0.5M cells (rialba_coarse of dtm_voxelization), materials to be set
 # MATE  BLOCKID  DEGREE  RHO  VS  VP  QS  QP
+# QP below VP^2/(2 VS^2) * QS, or SPEED's Y_lambda comes out negative
+# (DAMPING 2 attenuates lambda): 52.5 keeps QP/QS = 1.75 of the stiffer rock
 MATE 1 2 2100 400 800 40 70
 MATE 2 2 2000 400 800 40 70
 MATE 3 2 2000 400 800 40 70
-MATE 4 2 1800 300 600 30 60
-MATE 5 2 1800 300 600 30 60
+MATE 4 2 1800 300 600 30 52.5
+MATE 5 2 1800 300 600 30 52.5
 # tag 6: bottom and sides, absorbing; tag 7: topography, free surface
 ABSO 6
 PLOZ 99 -266.384 -61.984 -242.5 -10000

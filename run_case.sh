@@ -92,6 +92,34 @@ if [ -z "${gridfile}" ]; then
     exit 1
 fi
 
+# DAMPING 2 (standard linear solid) attenuates lambda, not the bulk modulus,
+# with Y_lambda ~ VP^2/QP - 2 VS^2/QS: where that is not positive SPEED fits
+# negative coefficients, a material that gains energy. Checked on the .mate
+# before anything runs; FAILCOEF T, set in the run below, has SPEED refuse the
+# coefficients it actually computes. QS or QP 0 is no attenuation at all.
+damping=$(keyword DAMPING)
+if [ "${damping}" = 2 ]; then
+    matfile="${case_dir}/$(keyword MATFILE).mate"
+    if [ ! -f "${matfile}" ]; then
+        echo "no ${matfile}, the MATFILE of ${header}" >&2
+        exit 1
+    fi
+    if ! awk '$1 == "MATE" {
+            vs = $5; vp = $6; qs = $7; qp = $8
+            if (qs == 0 || qp == 0) { printf "anelastic: material %s QS %s QP %s, not attenuated\n", $2, qs, qp; next }
+            v = vp * vp / qp - 2 * vs * vs / qs
+            printf "anelastic: material %s VS %s VP %s QS %s QP %s: VP^2/QP - 2 VS^2/QS = %g%s\n", \
+                $2, vs, vp, qs, qp, v, (v > 0 ? "" : "  NOT POSITIVE")
+            if (v <= 0) bad = 1
+        } END { exit bad }' "${matfile}"; then
+        echo "${matfile}: QP must be below VP^2/(2 VS^2) * QS for every attenuated material," \
+            "or the anelastic coefficients of DAMPING 2 come out negative" >&2
+        exit 1
+    fi
+else
+    echo "anelastic: DAMPING ${damping:-not set}, no check on the coefficients"
+fi
+
 if [ -n "${mesh}" ]; then
     echo "mesh:    ${mesh} (from -m)"
 else
@@ -141,6 +169,9 @@ find "${case_dir}" -mindepth 1 -maxdepth 1 -type d -exec cp -r {} "${run_dir}/" 
 ln -s "${mesh}" "${run_dir}/${gridfile}.mesh"
 cd "${run_dir}"
 mkdir -p VTKOUT POST-PROC ${mpifile:+"${mpifile}"} ${monfile:+"${monfile}"}
+if [ "${damping}" = 2 ]; then
+    { grep -v '^FAILCOEF' SPEED.input; echo "FAILCOEF T"; } > SPEED.input.tmp && mv SPEED.input.tmp SPEED.input
+fi
 
 {
     echo "case:      ${case_dir}"

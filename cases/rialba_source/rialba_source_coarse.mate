@@ -1,6 +1,8 @@
 # SPEED material file (written by SPEED Studio)
 # MATE  BLOCKID  DEGREE  RHO  VS  VP  QS  QP
-MATE 1 2 1800 300 600 30 60
+# QP below VP^2/(2 VS^2) * QS, or SPEED's Y_lambda comes out negative
+# (DAMPING 2 attenuates lambda): 52.5 keeps QP/QS = 1.75 of the stiffer rock
+MATE 1 2 1800 300 600 30 52.5
 MATE 2 2 2000 400 800 40 70
 ABSO 4
 PLOZ 99 -266.384 -61.984 -240 -10000
