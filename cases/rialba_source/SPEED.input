@@ -1,5 +1,5 @@
-GRIDFILE   rialba_source_coarse
-MATFILE    rialba_source_coarse
+GRIDFILE   rialba_source
+MATFILE    rialba_source
 MPIFILE    FILES_MPI
 MONFILE    MONITOR
 DAMPING    2

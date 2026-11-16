@@ -1,0 +1,15 @@
+# SPEED material file of rialba_source, the box around the source points cut out of the
+# rialba grid by source_mesh of dtm_voxelization: the same labels and materials as
+# rialba.mate, of which the box holds 1, 2 and 4
+# MATE  BLOCKID  DEGREE  RHO  VS  VP  QS  QP
+# QP below VP^2/(2 VS^2) * QS, or SPEED's Y_lambda comes out negative
+# (DAMPING 2 attenuates lambda): with QP = 2 QS that means VP/VS above 2 in every material
+MATE   1   2   2700   1800   3800   180.0   360.0
+MATE   2   2   2350    800   1650    80.0   160.0
+MATE   4   2   1950    545   1160    54.5   109.0
+# tag 6: bottom and sides, absorbing; tag 7: topography, free surface
+ABSO 6
+PLOZ 99 -266.384 -61.984 -242.5 -10000
+FUNC 99 1 0.1 2
+FMAX 3
+EXPN 0.0
