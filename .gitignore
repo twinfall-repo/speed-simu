@@ -8,3 +8,4 @@ logs/
 *~
 *.swp
 movie/*.png
+movie/__pycache__/

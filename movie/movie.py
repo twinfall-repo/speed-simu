@@ -1,0 +1,144 @@
+"""The movie: the train along the lake, the whole mountain, then the towers:
+
+    python movie/movie.py SCENE_DIR OUT_DIR low|high [FRAME ...]
+
+SCENE_DIR is dtm_voxelization's output of the case (output/rialba): the
+textured terrain and lake of `orthophoto` and the railway of `railway`. The
+train of train.py runs along the railway at SPEED, real time, and the camera
+goes through three shots, keyed on where the head of the train is:
+
+  follow    from S_START, abreast of the train, out over the lake
+  overview  from S_OUT the camera pulls back to the whole mountain
+  towers    from S_IN it closes in on the towers of Rialba, and holds them as
+            the train passes beneath, until S_END, its tunnel
+
+between which it eases smoothly. low is 960 x 540 at 12 frames a second,
+for a laptop; high 1920 x 1080 at 30, for the cluster. Frames go to
+OUT_DIR/frames, then ffmpeg makes OUT_DIR/rialba_<quality>.mp4. Given FRAME
+numbers, only those are rendered, and no video: to check a shot.
+
+The SPEED solution is not in yet: when it is, its surface displacement at
+each frame's time goes on the terrain the same way.
+"""
+
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import pyvista as pv
+
+from train import build, place
+
+SPEED = 80 / 3.6  # m/s, as train_series.py
+S_START, S_OUT, S_IN, S_END = 150.0, 420.0, 700.0, 980.0  # m along the railway
+EASE = 220.0  # m of the train's run over which one shot eases into the next
+OVERVIEW = ((-250.0, -1900.0, 650.0), (0.0, -50.0, -150.0))  # camera, focal point
+TOWERS = ((-720.0, -560.0, -80.0), (-240.0, 40.0, -170.0))
+QUALITY = {"low": ((960, 540), 12), "high": ((1920, 1080), 30)}
+SUN = ((-150.0, 300.0, 400.0), (-350.0, -300.0, -277.0))  # behind the towers, over the lake
+
+
+def smooth(a, b, x):
+    """0 before a, 1 after b, a smoothstep between."""
+    t = np.clip((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def follow(path, s, head):
+    """Camera and focal point abreast of the train, out over the lake, with the
+    mountain behind it."""
+    k = np.searchsorted(s, head)
+    ahead = path[min(k + 10, len(s) - 1)] - path[max(k - 10, 0)]
+    ahead[2] = 0
+    ahead /= np.linalg.norm(ahead)
+    lake = -np.cross(ahead, [0, 0, 1])  # the lake lies left of the train running north-west
+    middle = np.array([np.interp(head - 56, s, path[:, i]) for i in range(3)])
+    return middle + 15 * ahead + 95 * lake + [0, 0, 28], middle + [0, 0, 8]
+
+
+def camera(path, s, head):
+    """The camera at the head's arc length, eased between the three shots."""
+    cam, focal = (np.array(v) for v in follow(path, s, head))
+    out = smooth(S_OUT, S_OUT + EASE, head)
+    cam, focal = (1 - out) * cam + out * np.array(OVERVIEW[0]), \
+        (1 - out) * focal + out * np.array(OVERVIEW[1])
+    back = smooth(S_IN, S_IN + EASE, head)
+    cam, focal = (1 - back) * cam + back * np.array(TOWERS[0]), \
+        (1 - back) * focal + back * np.array(TOWERS[1])
+    return cam, focal
+
+
+def scene(scene_dir, size):
+    plotter = pv.Plotter(off_screen=True, window_size=size)
+    plotter.set_background("#b9cde0", top="#6f97c2")
+    terrain = pv.read(scene_dir / "orthophoto_0.5m.vtp")
+    photo = pv.read_texture(scene_dir / "orthophoto_0.5m.png")
+    photo.interpolate = True  # bilinear, or close up the 0.5 m pixels show as blocks
+    plotter.add_mesh(terrain, texture=photo, ambient=0.35, diffuse=0.7)
+    water = pv.read_texture(scene_dir / "lake_water.png")
+    water.repeat = True
+    water.SetUseSRGBColorSpace(True)  # a PBR base colour has to be sRGB
+    normal = pv.read_texture(scene_dir / "lake_normal.png")
+    normal.repeat = True
+    lake = plotter.add_mesh(pv.read(scene_dir / "lake_0.5m.vtp"), pbr=True, metallic=0.0,
+                            roughness=0.15, opacity=0.92)
+    lake.prop.SetBaseColorTexture(water)
+    lake.prop.SetNormalTexture(normal)
+    plotter.add_light(pv.Light(position=SUN[0], focal_point=SUN[1], intensity=1.5,
+                               light_type="scene light"))
+    print(f"scene {scene_dir}: terrain {terrain.n_cells:,} triangles, lake, sun", flush=True)
+    return plotter
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) < 3 or argv[2] not in QUALITY:
+        raise SystemExit(__doc__)
+    scene_dir, out, quality = Path(argv[0]), Path(argv[1]), argv[2]
+    only = [int(f) for f in argv[3:]]
+    size, fps = QUALITY[quality]
+    frames_dir = out / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    track = np.loadtxt(scene_dir / "railway.csv")
+    s, path = track[:, 0], track[:, 1:4]
+    heads = np.arange(S_START, S_END, SPEED / fps)
+    print(f"{quality}: {size[0]} x {size[1]} at {fps} fps, {len(heads)} frames, "
+          f"{len(heads) / fps:.1f} s; head from s {S_START:g} to {S_END:g} m at "
+          f"{SPEED * 3.6:.0f} km/h; shots follow, overview from s {S_OUT:g}, towers from "
+          f"s {S_IN:g}", flush=True)
+
+    plotter = scene(scene_dir, size)
+    cars, texture = build()
+    train = place(cars, path, s, heads[0])
+    plotter.add_mesh(train, texture=texture, ambient=0.35, diffuse=0.7)
+
+    t0 = time.perf_counter()
+    for n in only or range(len(heads)):
+        train.points = place(cars, path, s, heads[n]).points
+        cam, focal = camera(path, s, heads[n])
+        plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
+        plotter.camera.clipping_range = (1.0, 6000.0)
+        plotter.render()  # off screen, a screenshot does not render by itself
+        frame = frames_dir / f"frame_{n:05d}.png"
+        plotter.screenshot(frame)
+        if only or n % 50 == 0:
+            print(f"  frame {n}: head at s {heads[n]:.0f} m, camera {cam.round(0)} -> "
+                  f"{focal.round(0)}, {time.perf_counter() - t0:.0f}s so far", flush=True)
+    plotter.close()
+    if only:
+        return
+
+    video = out / f"rialba_{quality}.mp4"
+    command = ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps),
+               "-i", str(frames_dir / "frame_%05d.png"), "-c:v", "libx264", "-crf", "18",
+               "-pix_fmt", "yuv420p", str(video)]
+    print(f"  {' '.join(command)}", flush=True)
+    subprocess.run(command, check=True)
+    print(f"wrote {video}: {video.stat().st_size / 1024**2:.1f} MB", flush=True)
+
+
+if __name__ == "__main__":
+    main()
