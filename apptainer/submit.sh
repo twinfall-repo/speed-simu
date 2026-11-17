@@ -34,7 +34,7 @@
 # SPEED_EXCL=0 shares the node with other jobs (place=scatter) instead of
 # reserving it (default 1, place=scatter:excl): with fewer SPEED_NCPUS and
 # SPEED_MEM_GB the job then starts on the cores a busy node has left.
-# SPEED_WALLTIME is the job's walltime, e.g. 12:00:00 (default none): with it the
+# SPEED_WALLTIME is the job's walltime (default 24:00:00, the 5 s Rialba takes ~17 h): the
 # scheduler can fit the job in the gaps of the queue, and kills it past that time.
 # SPEED is hybrid MPI and OpenMP: SPEED_THREADS OpenMP threads (default 1) on
 # each of SPEED_NP MPI processes, by default as many as fit on the physical
@@ -65,8 +65,7 @@ export SPEED_NP="${SPEED_NP:-$(( nodes * per_node ))}"
 mem_gb="${SPEED_MEM_GB:-500}"
 place=scatter:excl
 [ "${SPEED_EXCL:-1}" = 0 ] && place=scatter
-walltime=()
-[ -n "${SPEED_WALLTIME:-}" ] && walltime=(-l "walltime=${SPEED_WALLTIME}")
+walltime=(-l "walltime=${SPEED_WALLTIME:-24:00:00}")
 
 # The job script. What is expanded here is fixed at submission: the log folder,
 # the submission folder and the command. What is escaped (\$) is expanded when the
@@ -176,7 +175,7 @@ echo "name: ${name}"
 echo "log:  ${logs}/${name}.<jobid>.log"
 echo "resources: nodes=${nodes}, each ncpus=${ncpus}, mem=${mem_gb} GB, processes=${per_node};" \
     "in all processes=${SPEED_NP}, threads=${SPEED_THREADS}"
-echo "walltime: ${SPEED_WALLTIME:-none}"
+echo "walltime: ${SPEED_WALLTIME:-24:00:00}"
 echo "place: ${place}"
 echo "${job}" | qsub -V -N "${name}" -l "select=${nodes}:ncpus=${ncpus}:mpiprocs=${per_node}:mem=${mem_gb}gb" \
-    -l "place=${place}" ${walltime[@]+"${walltime[@]}"} -j oe -k oe
+    -l "place=${place}" "${walltime[@]}" -j oe -k oe
