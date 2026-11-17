@@ -18,6 +18,9 @@ From: rockylinux:9
 # share 3 corners of a face and not the 4th, and the original copied the whole
 # face across, corrupted the connectivity and looped for ever after "Making
 # Spectral connectivity".
+# CHECK_SISM.f90 reads column 16 of val_sism only when it has 16 columns:
+# LOAD-SRCMOD2 allocates 15 (LOAD-SRCMOD3 16), and the original read t1_b from
+# column 16 for both, out of the bounds of the array. t1_b is not used after.
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
 # SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
