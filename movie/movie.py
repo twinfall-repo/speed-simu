@@ -37,7 +37,7 @@ from train import build, place
 SPEED = 80 / 3.6  # m/s, as train_series.py
 S_START, S_OUT, S_IN, S_BACK = 150.0, 420.0, 700.0, 1180.0  # m along the railway
 EASE = 220.0  # m of the train's run over which one shot eases into the next
-OVERVIEW = ((-250.0, -1900.0, 650.0), (0.0, -50.0, -150.0))  # camera, focal point
+OVERVIEW = ((-600.0, -4200.0, 1900.0), (0.0, 200.0, -150.0))  # camera, focal point
 TOWERS = ((-720.0, -560.0, -80.0), (-240.0, 40.0, -170.0))
 QUALITY = {"low": ((960, 540), 12), "high": ((1920, 1080), 30)}
 SUN = ((-150.0, 300.0, 400.0), (-350.0, -300.0, -277.0))  # behind the towers, over the lake
