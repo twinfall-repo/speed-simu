@@ -17,15 +17,17 @@ holding both repositories.
 cd dtm_voxelization
 python -m dtm_voxelization.railway cases/rialba.toml
 python -m dtm_voxelization.pcn_orthophoto cases/rialba.toml
-python -m dtm_voxelization.orthophoto cases/rialba.toml 0.5 output/rialba/pcn2012.tif
+python -m dtm_voxelization.orthophoto cases/rialba.toml 0.5 data/orthophoto/rialba_pcn2012.tif
+python -m dtm_voxelization.backdrop cases/rialba.toml
 ```
 
 | step | writes, in `output/rialba/` | |
 |---|---|---|
 | `railway` | `railway.csv`, `railway.vtu` | the track from OpenStreetMap (ODbL), every 2 m, `s x y z kind`: kind 0 open, 1 avalanche gallery, 2 tunnel. The OSM answer is cached in `data/xyz/railway_osm.json`, so it runs offline. |
-| `pcn_orthophoto` | `pcn2012.tif` | AGEA's 2012 orthophoto, 50 cm, over the whole DTM, from the Geoportale Nazionale's WMS (no access constraints stated; credit "Geoportale Nazionale – Ortofoto AGEA 2012"). |
+| `pcn_orthophoto` | `data/orthophoto/rialba_pcn2012.tif` (in the repository, JPEG-compressed: fetched once) | AGEA's 2012 orthophoto, 50 cm, over the whole DTM, from the Geoportale Nazionale's WMS (no access constraints stated; credit "Geoportale Nazionale – Ortofoto AGEA 2012"). |
 | `orthophoto` | `orthophoto_0.5m.png`, `orthophoto_0.5m.vtp` | the photo, colour-graded against its blue haze, as one texture, and the terrain every 2 m with its texture coordinates |
 | | `lake_0.5m.vtp`, `lake_water.png`, `lake_normal.png` | the lake's surface, flat at 198 m a.s.l. over the DTM's bathymetry, with a tile of water and a normal map of ripples |
+| `backdrop` | `backdrop.png`, `backdrop.vtp`, `backdrop_lake.vtp` | the land and lake 6 km around the DTM, with a hole where it is: the Copernicus DEM GLO-30 (30 m, open data), joined to the DTM along its edge, under the same national photo at 1 m. `movie.py` takes it when it is there. |
 
 0.5 m is the national photo's own resolution: a finer texture needs a finer
 photo (AGEA 2021, 20 cm, on request from Regione Lombardia,
@@ -82,7 +84,7 @@ top of `movie.py`:
 | `S_START` 150 | abreast of the train, out over the lake |
 | `S_OUT` 420 | eases (over `EASE` m) into `OVERVIEW`, the whole mountain |
 | `S_IN` 700 | eases into `TOWERS`, the towers with the shore below |
-| `S_END` 980 | the train enters the north-western tunnel: the end |
+| `S_BACK` 1180 | while the train is in the north-western tunnel, eases back abreast of it, to see it come out and run to the end of the domain |
 
 `OVERVIEW` and `TOWERS` are (camera, focal point) pairs in the DTM's frame;
 `SUN` the light that makes the lake glint.

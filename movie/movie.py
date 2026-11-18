@@ -3,14 +3,17 @@
     python movie/movie.py SCENE_DIR OUT_DIR low|high [FRAME ...]
 
 SCENE_DIR is dtm_voxelization's output of the case (output/rialba): the
-textured terrain and lake of `orthophoto` and the railway of `railway`. The
+textured terrain and lake of `orthophoto`, the railway of `railway` and, if
+there, the land and lake around them of `backdrop`. The
 train of train.py runs along the railway at SPEED, real time, and the camera
 goes through three shots, keyed on where the head of the train is:
 
   follow    from S_START, abreast of the train, out over the lake
   overview  from S_OUT the camera pulls back to the whole mountain
   towers    from S_IN it closes in on the towers of Rialba, and holds them as
-            the train passes beneath, until S_END, its tunnel
+            the train passes beneath and into its tunnel
+  follow    from S_BACK, while the train is in the tunnel, back abreast of
+            it, to see it come out and run to the end of the domain
 
 between which it eases smoothly. low is 960 x 540 at 12 frames a second,
 for a laptop; high 1920 x 1080 at 30, for the cluster. Frames go to
@@ -32,7 +35,7 @@ import pyvista as pv
 from train import build, place
 
 SPEED = 80 / 3.6  # m/s, as train_series.py
-S_START, S_OUT, S_IN, S_END = 150.0, 420.0, 700.0, 980.0  # m along the railway
+S_START, S_OUT, S_IN, S_BACK = 150.0, 420.0, 700.0, 1180.0  # m along the railway
 EASE = 220.0  # m of the train's run over which one shot eases into the next
 OVERVIEW = ((-250.0, -1900.0, 650.0), (0.0, -50.0, -150.0))  # camera, focal point
 TOWERS = ((-720.0, -560.0, -80.0), (-240.0, 40.0, -170.0))
@@ -55,7 +58,7 @@ def follow(path, s, head):
     ahead /= np.linalg.norm(ahead)
     lake = -np.cross(ahead, [0, 0, 1])  # the lake lies left of the train running north-west
     middle = np.array([np.interp(head - 56, s, path[:, i]) for i in range(3)])
-    return middle + 15 * ahead + 95 * lake + [0, 0, 28], middle + [0, 0, 8]
+    return middle + 20 * ahead + 135 * lake + [0, 0, 40], middle + [0, 0, 8]
 
 
 def camera(path, s, head):
@@ -64,10 +67,12 @@ def camera(path, s, head):
     out = smooth(S_OUT, S_OUT + EASE, head)
     cam, focal = (1 - out) * cam + out * np.array(OVERVIEW[0]), \
         (1 - out) * focal + out * np.array(OVERVIEW[1])
-    back = smooth(S_IN, S_IN + EASE, head)
-    cam, focal = (1 - back) * cam + back * np.array(TOWERS[0]), \
-        (1 - back) * focal + back * np.array(TOWERS[1])
-    return cam, focal
+    closer = smooth(S_IN, S_IN + EASE, head)
+    cam, focal = (1 - closer) * cam + closer * np.array(TOWERS[0]), \
+        (1 - closer) * focal + closer * np.array(TOWERS[1])
+    again = smooth(S_BACK, S_BACK + EASE, head)
+    near, at = follow(path, s, head)
+    return (1 - again) * cam + again * near, (1 - again) * focal + again * at
 
 
 def scene(scene_dir, size):
@@ -82,13 +87,22 @@ def scene(scene_dir, size):
     water.SetUseSRGBColorSpace(True)  # a PBR base colour has to be sRGB
     normal = pv.read_texture(scene_dir / "lake_normal.png")
     normal.repeat = True
-    lake = plotter.add_mesh(pv.read(scene_dir / "lake_0.5m.vtp"), pbr=True, metallic=0.0,
-                            roughness=0.15, opacity=0.92)
-    lake.prop.SetBaseColorTexture(water)
-    lake.prop.SetNormalTexture(normal)
+    lakes = ["lake_0.5m.vtp"]
+    backdrop = scene_dir / "backdrop.vtp"
+    if backdrop.exists():  # the land and lake around the case, from dtm_voxelization
+        around = pv.read_texture(scene_dir / "backdrop.png")
+        around.interpolate = True
+        plotter.add_mesh(pv.read(backdrop), texture=around, ambient=0.35, diffuse=0.7)
+        lakes.append("backdrop_lake.vtp")
+    for name in lakes:
+        lake = plotter.add_mesh(pv.read(scene_dir / name), pbr=True, metallic=0.0,
+                                roughness=0.15, opacity=0.92)
+        lake.prop.SetBaseColorTexture(water)
+        lake.prop.SetNormalTexture(normal)
     plotter.add_light(pv.Light(position=SUN[0], focal_point=SUN[1], intensity=1.5,
                                light_type="scene light"))
-    print(f"scene {scene_dir}: terrain {terrain.n_cells:,} triangles, lake, sun", flush=True)
+    print(f"scene {scene_dir}: terrain {terrain.n_cells:,} triangles, "
+          f"{'with' if backdrop.exists() else 'no'} backdrop, lake, sun", flush=True)
     return plotter
 
 
@@ -104,11 +118,11 @@ def main(argv=None):
 
     track = np.loadtxt(scene_dir / "railway.csv")
     s, path = track[:, 0], track[:, 1:4]
-    heads = np.arange(S_START, S_END, SPEED / fps)
+    heads = np.arange(S_START, s[-1], SPEED / fps)  # to the end of the domain
     print(f"{quality}: {size[0]} x {size[1]} at {fps} fps, {len(heads)} frames, "
-          f"{len(heads) / fps:.1f} s; head from s {S_START:g} to {S_END:g} m at "
+          f"{len(heads) / fps:.1f} s; head from s {S_START:g} to {s[-1]:.0f} m at "
           f"{SPEED * 3.6:.0f} km/h; shots follow, overview from s {S_OUT:g}, towers from "
-          f"s {S_IN:g}", flush=True)
+          f"s {S_IN:g}, follow again from s {S_BACK:g}", flush=True)
 
     plotter = scene(scene_dir, size)
     cars, texture = build()
@@ -120,7 +134,7 @@ def main(argv=None):
         train.points = place(cars, path, s, heads[n]).points
         cam, focal = camera(path, s, heads[n])
         plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
-        plotter.camera.clipping_range = (1.0, 6000.0)
+        plotter.camera.clipping_range = (1.0, 12000.0)
         plotter.render()  # off screen, a screenshot does not render by itself
         frame = frames_dir / f"frame_{n:05d}.png"
         plotter.screenshot(frame)
