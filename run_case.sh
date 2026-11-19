@@ -209,7 +209,10 @@ else
     started=$(date +%s)
     speed > speed_setup.out 2>&1 || true
     dt_cfl=$(sed -n 's/.*deltat CFL = *\([0-9.Ee+-]*\).*/\1/p' speed_setup.out | head -n 1)
-    if ! grep -q 'Set-up ended' speed_setup.out || [ -z "${dt_cfl}" ]; then
+    # 'Set-up time', which rank 0 writes before MPI_FINALIZE, not 'Set-up ended',
+    # which it writes after: every rank then exits with EXIT_SETUP = 4, and on
+    # many nodes mpirun kills the job at the first one, often before rank 0 writes
+    if ! grep -q 'Set-up time =' speed_setup.out || [ -z "${dt_cfl}" ]; then
         echo "the setup run for -c did not give deltat CFL; last lines of ${run_dir}/speed_setup.out:" >&2
         tail -n 30 speed_setup.out >&2
         exit 1
