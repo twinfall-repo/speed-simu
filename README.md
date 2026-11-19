@@ -41,6 +41,21 @@ ssh-keyscan node{1..10} >> ~/.ssh/known_hosts
 ssh -o BatchMode=yes node2 hostname
 ```
 
+On CINECA's Galileo100 (SLURM, Singularity 3.8, 48 cores a node) the same
+image runs through `apptainer/submit_slurm.sh`, with `APPTAINER_BIN=singularity`
+by default. The image cannot be built there (no root): copy `speed.sif` over.
+
+```bash
+apptainer/submit_slurm.sh -- bash run_case.sh cases/rialba_source               # a whole node
+SPEED_NODES=2 apptainer/submit_slurm.sh -- bash run_case.sh cases/rialba_source # two
+SPEED_QOS=g100_qos_lprod SPEED_WALLTIME=4-00:00:00 apptainer/submit_slurm.sh -- bash run_case.sh cases/rialba
+```
+
+`SPEED_ACCOUNT` is the budget (`saldo -b`), `SPEED_PARTITION` defaults to
+`g100_usr_prod` (1 to 32 nodes, 24 h); `apptainer/submit_slurm.sh -h` lists
+the rest. Keep the runs under `$WORK`: `$CINECA_SCRATCH` deletes files older
+than 40 days.
+
 The time step is 24% of SPEED's deltat CFL, the most it takes without
 warnings, found by a first setup-only run: `-c FRACTION` for another fraction,
 `-c case` for the case's own `TIMESTEP` (see `bash run_case.sh -h`).

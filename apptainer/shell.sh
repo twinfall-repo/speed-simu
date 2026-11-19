@@ -22,9 +22,11 @@
 #   SPEED_NP        MPI processes of run_case.sh, when it is not given -n
 #   SPEED_THREADS   OpenMP threads of each MPI process (default 1)
 #
-# In a PBS job, the container gets the job's nodes (SPEED_HOSTS) and the
-# command that starts orted in this image on the other nodes
-# (SPEED_LAUNCH_AGENT), which run_case.sh passes to mpirun.
+# In a PBS or SLURM job, the container gets the job's nodes (SPEED_HOSTS) and
+# the command that starts orted in this image on the other nodes
+# (SPEED_LAUNCH_AGENT), which run_case.sh passes to mpirun. Singularity 3
+# (CINECA's G100: APPTAINER_BIN=singularity) reads SINGULARITYENV_*, Apptainer
+# APPTAINERENV_*: the prefix follows `$APPTAINER_BIN --version`.
 #
 # Runs with --containall --no-home --writable-tmpfs: nothing of the host is
 # visible except the binds, and writes inside the image itself land in a
@@ -115,18 +117,34 @@ speed_shell() {
     isolation=(--containall --no-home --writable-tmpfs --pwd /workspace)
     # the job's name for itself, which names the run folder of run_case.sh
     [ -n "${PBS_JOBID:-}" ] && isolation+=(--env "PBS_JOBID=${PBS_JOBID}")
+    [ -n "${SLURM_JOB_ID:-}" ] && isolation+=(--env "SLURM_JOB_ID=${SLURM_JOB_ID}")
     [ -n "${SPEED_NP:-}" ] && isolation+=(--env "SPEED_NP=${SPEED_NP}")
     isolation+=(--env "SPEED_THREADS=${SPEED_THREADS:-1}")
     echo "processes: ${SPEED_NP:-unset}, threads per process: ${SPEED_THREADS:-1}"
 
-    # In a PBS job, the nodes as host:slots, for mpirun in the container
-    # (PBS_NODEFILE itself is not visible there), and how mpirun starts orted
-    # on the other nodes: through ssh, in this same image with the same binds.
-    # Passed as APPTAINERENV_*, not --env, which splits its value at the commas
+    # In a PBS or SLURM job, the nodes as host:slots, for mpirun in the
+    # container (the job's node list is not visible there), and how mpirun
+    # starts orted on the other nodes: through ssh, in this same image with the
+    # same binds. Passed as *ENV_* variables, not --env, which splits its
+    # value at the commas
+    local hosts=""
     if [ -n "${PBS_NODEFILE:-}" ]; then
-        job_env+=("APPTAINERENV_SPEED_HOSTS=$(sort "${PBS_NODEFILE}" | uniq -c | awk '{ printf "%s%s:%s", sep, $2, $1; sep = "," }')")
-        job_env+=("APPTAINERENV_SPEED_LAUNCH_AGENT=$(command -v "${apptainer_bin}") exec ${isolation[*]} ${bind_args[*]} ${image} orted")
-        echo "nodes:   $(sort -u "${PBS_NODEFILE}" | paste -sd ' ')"
+        hosts=$(sort "${PBS_NODEFILE}" | uniq -c | awk '{ printf "%s%s:%s", sep, $2, $1; sep = "," }')
+    elif [ -n "${SLURM_JOB_NODELIST:-}" ]; then
+        if [ -z "${SLURM_NTASKS_PER_NODE:-}" ]; then
+            echo "SLURM job without SLURM_NTASKS_PER_NODE: submit with --ntasks-per-node" >&2
+            return 1
+        fi
+        hosts=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" \
+            | awk -v n="${SLURM_NTASKS_PER_NODE}" '{ printf "%s%s:%s", sep, $1, n; sep = "," }')
+    fi
+    if [ -n "${hosts}" ]; then
+        local agent prefix=APPTAINERENV
+        # Singularity 3 reads only SINGULARITYENV_*; Apptainer warns about it
+        "${apptainer_bin}" --version 2>/dev/null | grep -q '^singularity' && prefix=SINGULARITYENV
+        agent="$(command -v "${apptainer_bin}") exec ${isolation[*]} ${bind_args[*]} ${image} orted"
+        job_env+=("${prefix}_SPEED_HOSTS=${hosts}" "${prefix}_SPEED_LAUNCH_AGENT=${agent}")
+        echo "nodes:   ${hosts} (passed as ${prefix}_*)"
     fi
 
     if [ $# -eq 0 ]; then

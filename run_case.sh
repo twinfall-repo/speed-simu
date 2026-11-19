@@ -32,13 +32,13 @@
 #
 # The case folder is never written: its files are copied to
 # output/<case>/<run>, with the mesh linked as <GRIDFILE>.mesh, and SPEED runs
-# there. <run> is the PBS job id when there is one, the time otherwise. The
+# there. <run> is the PBS or SLURM job id when there is one, the time otherwise. The
 # run folder holds run_info.txt (what was run, on what, with which SPEED),
 # speed.out (SPEED's own output) and the results, and ends up archived in
 # output/<case>/<run>.tar.zst, a single file to copy off the cluster
 # (tar -I zstd -xf to unpack). zstd runs on all the cores the run had: gzip,
 # on one core, took longer than SPEED itself on the binary VTK output.
-# In a PBS job SPEED runs on the nodes of the job, SPEED_HOSTS, with orted
+# In a PBS or SLURM job SPEED runs on the nodes of the job, SPEED_HOSTS, with orted
 # started on the other nodes by SPEED_LAUNCH_AGENT (both from apptainer/shell.sh).
 # SPEED_THREADS (default 1) is the OpenMP threads of each MPI process.
 # The format of the VTKWRITE output is on its line of SPEED.input, e.g.
@@ -154,7 +154,7 @@ if [ ! -f "${mesh}" ]; then
 fi
 mesh=$(realpath "${mesh}")
 
-run_id="${PBS_JOBID:-$(date '+%Y%m%d_%H%M%S')}"
+run_id="${PBS_JOBID:-${SLURM_JOB_ID:-$(date '+%Y%m%d_%H%M%S')}}"
 run_dir="${here}/output/${case_name}/${run_id}"
 if [ -e "${run_dir}" ]; then
     echo "run folder already there: ${run_dir}" >&2
@@ -184,7 +184,7 @@ fi
     fi
     echo "vtk:       $(grep -m1 '^ *VTKWRITE' "${header}" || echo 'none, no VTKWRITE line')"
     echo "host:      $(hostname)"
-    echo "nodes:     ${SPEED_HOSTS:-this one only, not a PBS job}"
+    echo "nodes:     ${SPEED_HOSTS:-this one only, not a PBS or SLURM job}"
     echo "processes: ${np}"
     echo "threads:   ${threads} per process"
     echo "start:     $(date '+%F %T')"
