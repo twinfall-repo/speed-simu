@@ -16,7 +16,10 @@
 # SPEED_THREADS    OpenMP threads of each process (default 1)
 # SPEED_WALLTIME   walltime (default 24:00:00)
 # SPEED_NAME       name of the job and of its log (default speed-simu)
-# SPEED_MAIL       e-mail for SLURM's mail when the job ends or fails (none by default)
+# SPEED_MAIL       e-mail for the job's summary at its end (apptainer/job_summary.sh:
+#                  time, queue wait, cores, peak memory, core hours, budget, SPEED's
+#                  progress and rate, where the results are and the scp to fetch them);
+#                  SLURM's own mail only if the job fails or hits the walltime
 # APPTAINER_BIN    container runtime (default singularity)
 # SPEED_IMAGE      the image (default apptainer/speed.sif)
 # On more nodes mpirun in the container reaches the others by ssh, with the
@@ -28,7 +31,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "${here}/.." && pwd)
 
 case "${1:-}" in
-    -h|--help) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     "")        echo "no command given" >&2; exit 1 ;;
 esac
 
@@ -44,7 +47,8 @@ export APPTAINER_BIN="${APPTAINER_BIN:-singularity}"
 qos=()
 [ -n "${SPEED_QOS:-}" ] && qos=(--qos "${SPEED_QOS}")
 mail=()
-[ -n "${SPEED_MAIL:-}" ] && mail=(--mail-type END,FAIL --mail-user "${SPEED_MAIL}")
+[ -n "${SPEED_MAIL:-}" ] && mail=(--mail-type FAIL,TIME_LIMIT --mail-user "${SPEED_MAIL}")
+export SPEED_COMMAND="$*"
 
 echo "name: ${name}"
 echo "log:  ${logs}/${name}.<jobid>.log"
@@ -54,9 +58,34 @@ echo "resources: nodes=${nodes}, processes per node=${per_node}, in all processe
     "threads=${SPEED_THREADS}, runtime=${APPTAINER_BIN}"
 echo "mail: ${SPEED_MAIL:-none}"
 
+# The job: the command in the background, the memory of its process tree on
+# the first node sampled every 30 s, then the summary. SIGTERM (walltime,
+# scancel) still writes it: SLURM waits a little before killing for good.
 sbatch --job-name "${name}" --account "${SPEED_ACCOUNT:-pMI25_DMAT}" \
     --partition "${SPEED_PARTITION:-g100_usr_prod}" ${qos[@]+"${qos[@]}"} ${mail[@]+"${mail[@]}"} \
     --nodes "${nodes}" --ntasks-per-node "${per_node}" --cpus-per-task "${SPEED_THREADS}" \
     --exclusive --mem 0 --time "${SPEED_WALLTIME:-24:00:00}" \
-    --output "${logs}/${name}.%j.log" --export ALL --chdir "${PWD}" \
-    --wrap "echo \"nodes: \${SLURM_JOB_NODELIST}\"; $(printf '%q ' "${here}/run.sh" "$@")"
+    --output "${logs}/${name}.%j.log" --export ALL --chdir "${PWD}" <<EOF
+#!/bin/bash
+echo "nodes: \${SLURM_JOB_NODELIST}"
+log=$(printf '%q' "${logs}")/${name}.\${SLURM_JOB_ID}.log
+start=\$(date +%s)
+$(printf '%q ' "${here}/run.sh" "$@") &
+run_pid=\$!
+peak=0
+note=""
+trap 'note="SIGTERM: walltime or scancel"; kill -TERM \$run_pid 2>/dev/null' TERM
+while kill -0 \$run_pid 2>/dev/null; do
+    pids=\$(ps -e -o pid=,ppid= | awk -v root=\$run_pid '{ parent[\$1] = \$2 }
+        END { for (p in parent) { q = p; while (q in parent && q != root && q > 1) q = parent[q]
+              if (q == root) printf "%s,", p } print root }')
+    rss=\$(ps -o rss= -p "\$pids" 2>/dev/null | awk '{ s += \$1 } END { print s + 0 }')
+    (( rss > peak )) && peak=\$rss
+    sleep 30 & wait \$!
+done
+status=0
+wait \$run_pid || status=\$?
+[ -n "\$note" ] && status=143
+$(printf '%q' "${here}/job_summary.sh") "\$status" "\$start" "\$peak" "\$log" "\$note"
+exit \$status
+EOF

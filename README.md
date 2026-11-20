@@ -53,7 +53,12 @@ SPEED_QOS=g100_qos_lprod SPEED_WALLTIME=4-00:00:00 apptainer/submit_slurm.sh -- 
 
 `SPEED_ACCOUNT` is the budget (`saldo -b`), `SPEED_PARTITION` defaults to
 `g100_usr_prod` (1 to 32 nodes, 24 h); `apptainer/submit_slurm.sh -h` lists
-the rest. Keep the runs under `$WORK`: `$CINECA_SCRATCH` deletes files older
+the rest. With `SPEED_MAIL` set (e.g. in `~/.bashrc`) the job mails, at its
+end or when killed, the summary of `apptainer/job_summary.sh`, also kept as
+`logs/<name>.<jobid>.summary`: queue wait, time and share of the walltime,
+cores, peak memory of the first node, core hours and the budget left, SPEED's
+progress, minutes and core hours per simulated second, what 25 s would cost,
+the results and the scp that fetches them. Keep the runs under `$WORK`: `$CINECA_SCRATCH` deletes files older
 than 40 days.
 
 The time step is 24% of SPEED's deltat CFL, the most it takes without
