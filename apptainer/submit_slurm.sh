@@ -48,7 +48,7 @@ qos=()
 [ -n "${SPEED_QOS:-}" ] && qos=(--qos "${SPEED_QOS}")
 mail=()
 [ -n "${SPEED_MAIL:-}" ] && mail=(--mail-type FAIL,TIME_LIMIT --mail-user "${SPEED_MAIL}")
-export SPEED_COMMAND="$*"
+export SPEED_COMMAND="${*#-- }"
 
 echo "name: ${name}"
 echo "log:  ${logs}/${name}.<jobid>.log"

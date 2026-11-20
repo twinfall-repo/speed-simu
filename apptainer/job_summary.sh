@@ -26,7 +26,8 @@ nodes=${SLURM_JOB_NUM_NODES:-1}
 ncpus=$(( nodes * ${SLURM_CPUS_ON_NODE:-48} ))
 elapsed=$(( end - start ))
 core_h=$(awk -v s="${elapsed}" -v c="${ncpus}" 'BEGIN { printf "%.0f", s * c / 3600 }')
-submit=$(sacct -n -X -j "${id}" --format=Submit 2>/dev/null | head -1 | tr -d ' ')
+# squeue, not sacct: the accounting database does not answer from the compute nodes
+submit=$(squeue -h -j "${id}" -o %V 2>/dev/null | head -1 | tr -d ' ')
 wait_s=""
 [ -n "${submit}" ] && wait_s=$(( start - $(date -d "${submit}" +%s) ))
 limit=$(squeue -h -j "${id}" -o %l 2>/dev/null)
@@ -50,7 +51,8 @@ echo "elapsed:      $(hm "${elapsed}")$([ -n "${limit_s}" ] && [ "${limit_s}" -g
 echo "core hours:   ${core_h} (${ncpus} cores x elapsed)"
 echo "peak memory:  $(gb "${peak_kb}") on the first node ($(hostname -s)), of $(free -g | awk '/Mem/ { print $2 }') GB"
 if command -v saldo >/dev/null 2>&1; then
-    saldo -b 2>/dev/null | awk -v a="${SLURM_JOB_ACCOUNT:-}" -v j="${core_h}" '$1 == a {
+    # SLURM writes the account in lower case, saldo as it was created
+    saldo -b 2>/dev/null | awk -v a="${SLURM_JOB_ACCOUNT:-}" -v j="${core_h}" 'tolower($1) == tolower(a) {
         printf "budget:       %s: %s of %s core hours used (%s%%), %s left before this job, %s after it (saldo is updated daily); this month %s of %s\n",
             $1, $6, $4, $7, $4 - $6, $4 - $6 - j, $9, $8 }'
 fi
