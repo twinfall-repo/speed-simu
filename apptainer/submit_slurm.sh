@@ -16,6 +16,7 @@
 # SPEED_THREADS    OpenMP threads of each process (default 1)
 # SPEED_WALLTIME   walltime (default 24:00:00)
 # SPEED_NAME       name of the job and of its log (default speed-simu)
+# SPEED_MAIL       e-mail for SLURM's mail when the job ends or fails (none by default)
 # APPTAINER_BIN    container runtime (default singularity)
 # SPEED_IMAGE      the image (default apptainer/speed.sif)
 # On more nodes mpirun in the container reaches the others by ssh, with the
@@ -27,7 +28,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "${here}/.." && pwd)
 
 case "${1:-}" in
-    -h|--help) sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     "")        echo "no command given" >&2; exit 1 ;;
 esac
 
@@ -42,6 +43,8 @@ export SPEED_NP="${SPEED_NP:-$(( nodes * per_node ))}"
 export APPTAINER_BIN="${APPTAINER_BIN:-singularity}"
 qos=()
 [ -n "${SPEED_QOS:-}" ] && qos=(--qos "${SPEED_QOS}")
+mail=()
+[ -n "${SPEED_MAIL:-}" ] && mail=(--mail-type END,FAIL --mail-user "${SPEED_MAIL}")
 
 echo "name: ${name}"
 echo "log:  ${logs}/${name}.<jobid>.log"
@@ -49,9 +52,10 @@ echo "account: ${SPEED_ACCOUNT:-pMI25_DMAT}, partition: ${SPEED_PARTITION:-g100_
     "qos: ${SPEED_QOS:-none}, walltime: ${SPEED_WALLTIME:-24:00:00}"
 echo "resources: nodes=${nodes}, processes per node=${per_node}, in all processes=${SPEED_NP}," \
     "threads=${SPEED_THREADS}, runtime=${APPTAINER_BIN}"
+echo "mail: ${SPEED_MAIL:-none}"
 
 sbatch --job-name "${name}" --account "${SPEED_ACCOUNT:-pMI25_DMAT}" \
-    --partition "${SPEED_PARTITION:-g100_usr_prod}" ${qos[@]+"${qos[@]}"} \
+    --partition "${SPEED_PARTITION:-g100_usr_prod}" ${qos[@]+"${qos[@]}"} ${mail[@]+"${mail[@]}"} \
     --nodes "${nodes}" --ntasks-per-node "${per_node}" --cpus-per-task "${SPEED_THREADS}" \
     --exclusive --mem 0 --time "${SPEED_WALLTIME:-24:00:00}" \
     --output "${logs}/${name}.%j.log" --export ALL --chdir "${PWD}" \
