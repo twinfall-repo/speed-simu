@@ -1,12 +1,12 @@
 # SPEED material file of the whole Rialba mesh, materials to be set
 # MATE  BLOCKID  DEGREE  RHO  VS  VP  QS  QP
 # QP below VP^2/(2 VS^2) * QS, or SPEED's Y_lambda comes out negative
-# (DAMPING 2 attenuates lambda): with QP = 2 QS that means VP/VS above 2 in every material
-MATE   1   2   2700   1800   3800   180.0   360.0
-MATE   2   2   2350    800   1650    80.0   160.0
-MATE   3   2   2550   1200   2500   120.0   240.0
-MATE   4   2   1950    545   1160    54.5   109.0
-MATE   5   2   1950    545   1160    54.5   109.0
+# (DAMPING 2 attenuates lambda); the values are those of rialba_ttb.mate (Yixin, 2026-11-22)
+MATE   1   2   2700   1800   3200   180.0   250.0
+MATE   2   2   2350    800   1650    80.0   150.0
+MATE   3   2   2550   1200   2050   120.0   155.0
+MATE   4   2   1950    565   1020     6.5     9.5
+MATE   5   2   1950    565   1020     6.5     9.5
 # tag 6: bottom and sides, absorbing; tag 7: topography, free surface
 ABSO 6
 PLOZ 99 -266.384 -61.984 -242.5 -10000
