@@ -71,16 +71,18 @@ The run is in `output/rialba_source/<run>/` and archived in
 
 The points of the case's `LS.input` (the seven surveyed points and the five
 towers, for the Rialba cases) are written by SPEED every `TMONITOR` steps
-into `MONITOR/`, as raw binary split by MPI process. Outside the container,
-with Python and numpy,
+into `MONITOR/`, as raw binary split by MPI process. At the end of the run,
+before the archive, `run_case.sh` gathers them with `monitors.py` into
+`output/rialba/<run>/monitors/point_NN.txt`, one per point of `LS.input`:
+time, then displacement, velocity, acceleration, stress, strain and rotation,
+as many as `OPTIOUT` asks for. `run_info.txt` says how many points it wrote;
+a failure is reported there and does not stop the archive. It needs the
+image's python3 and numpy: an older image says so and leaves the gathering
+to be done by hand, with Python and numpy anywhere:
 
 ```bash
 python monitors.py output/rialba/<run>
 ```
-
-gathers them into `output/rialba/<run>/monitors/point_NN.txt`, one per point
-of `LS.input`: time, then displacement, velocity, acceleration, stress, strain
-and rotation, as many as `OPTIOUT` asks for.
 
 ## A new case
 

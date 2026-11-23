@@ -245,6 +245,23 @@ if [ "${status}" -ne 0 ]; then
     tail -n 30 speed.out >&2
 fi
 
+# the monitored points, one text file each, so that the archive carries them
+if [ -d MONITOR ]; then
+    if python3 -c 'import numpy' 2>/dev/null; then
+        # a failure here is reported, never fatal: the archive must still be made
+        if out=$(python3 "${here}/monitors.py" "${run_dir}" 2>&1); then
+            echo "monitors:  $(grep -c '^wrote' <<< "${out}") points in ${run_dir}/monitors" \
+                "$(grep -o 'MISSING.*' <<< "${out}" || true)" | tee -a run_info.txt
+        else
+            echo "monitors:  FAILED, last lines of monitors.py:" | tee -a run_info.txt >&2
+            tail -n 5 <<< "${out}" | tee -a run_info.txt >&2
+        fi
+    else
+        echo "monitors:  NOT GATHERED, no python3 with numpy in the image (rebuild it);" \
+            "run monitors.py on ${run_dir} later" | tee -a run_info.txt >&2
+    fi
+fi
+
 # also after a failure: what SPEED did write is what tells why
 archive="${run_dir}.tar.zst"
 started=$(date +%s)

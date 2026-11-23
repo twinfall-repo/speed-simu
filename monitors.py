@@ -52,8 +52,12 @@ def main(argv=None):
             path = info.with_suffix(suffix)
             if not path.exists():
                 continue
+            if path.stat().st_size % 8:
+                raise SystemExit(f"{path}: {path.stat().st_size} bytes, not whole float64 values")
             raw = np.fromfile(path, dtype="<f8")
             width = 1 + len(components) * count
+            if raw.size == 0:
+                raise SystemExit(f"{path}: empty")
             if raw.size % width:
                 raise SystemExit(f"{path}: {raw.size} values, not a multiple of {width} "
                                  f"(time and {len(components)} x {count} points)")
