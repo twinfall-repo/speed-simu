@@ -2,8 +2,8 @@
 
     python catenary.py RAILWAY_CSV      # catenary_preview.png, a stretch of it
 
-A mast every SPAN m outside the tunnels (also in the avalanche galleries,
-which the scene does not show), on the lake side, with a bracket out over
+A mast every SPAN m on the open track (kind 0; in the avalanche galleries
+of galleries.py the wires hang from the roof), on the lake side, with a bracket out over
 the track; the contact wire at CONTACT m over the rail and the messenger wire
 over it, sagging between the masts. A likeness, not a
 survey: the masts are not where the real ones are.
@@ -36,7 +36,7 @@ def build(track):
     tubes = []
     stations = np.arange(SPAN / 2, s[-1], SPAN)
     k = np.searchsorted(s, stations).clip(0, len(s) - 1)
-    k = k[kind[k] != 2]
+    k = k[kind[k] == 0]
     for i in k:
         foot = path[i] + OFFSET * lake[i]
         tubes.append(pv.Line(foot - 1.5 * up, foot + MAST * up).tube(radius=0.13, n_sides=8))
@@ -54,7 +54,7 @@ def build(track):
             if kind[run[0]] != 2 and len(run) > 1:
                 lines.append(pv.lines_from_points(wire[run]))
     wires = lines[0].append_polydata(*lines[1:])
-    print(f"catenary: {len(k)} masts every {SPAN:g} m outside the tunnels, wires in "
+    print(f"catenary: {len(k)} masts every {SPAN:g} m on the open track, wires in "
           f"{len(lines) // 2} runs outside the tunnels, {s[-1]:.0f} m of railway", flush=True)
     return masts, wires
 

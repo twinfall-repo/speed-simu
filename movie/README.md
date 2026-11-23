@@ -49,10 +49,17 @@ along the railway at 80 km/h as `train_NNNN.vtu`, one every 0.2 s, with
 `train.pvd`, the time series, and `train_texture.png`.
 
 `catenary.py` builds the overhead line, which `movie.py` adds by itself: a
-mast every 50 m outside the tunnels on the lake side, with its brackets, the
+mast every 50 m on the open track, on the lake side, with its brackets, the
 contact wire and the messenger wire sagging between masts (`python
 catenary.py ../../../dtm_voxelization/output/rialba/railway.csv` for
 `catenary_preview.png`). A likeness: the masts are not where the real ones are.
+
+`galleries.py` builds, from the `kind` of `railway.csv`, the avalanche
+galleries (kind 1: a wall on the mountain side, the roof, a pillar every 8 m
+on the lake side) and a portal at each mouth of a tunnel (kind 2), which
+`movie.py` adds too (`python galleries.py .../railway.csv` for
+`galleries_preview.png`). In the galleries the wires hang from the roof: no
+masts there.
 
 ## 3. Looking at it in ParaView
 
