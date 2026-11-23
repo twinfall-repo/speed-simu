@@ -58,7 +58,8 @@ catenary.py ../../../dtm_voxelization/output/rialba/railway.csv` for
 galleries (kind 1: a wall on the mountain side, the roof, a pillar every 8 m
 on the lake side), the tunnels (kind 2) as solid tubes that hide the train,
 draped by `movie.py` in the orthophoto where the DTM leaves them in the open,
-and a portal at each of their mouths, which
+a portal at each of their mouths, and the two rails at standard gauge
+outside the tunnels, which
 `movie.py` adds too (`python galleries.py .../railway.csv` for
 `galleries_preview.png`). In the galleries the wires hang from the roof: no
 masts there.

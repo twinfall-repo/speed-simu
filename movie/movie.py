@@ -5,8 +5,8 @@
 SCENE_DIR is dtm_voxelization's output of the case (output/rialba): the
 textured terrain and lake of `orthophoto`, the railway of `railway` and, if
 there, the land and lake around them of `backdrop`; the overhead line of
-catenary.py and the galleries and tunnel portals of galleries.py along the
-railway. The
+catenary.py and the galleries, tunnel portals and rails of galleries.py
+along the railway. The
 train of train.py runs along the railway at SPEED, real time, and the camera
 goes through its shots, keyed on where the head of the train is:
 
@@ -128,6 +128,7 @@ def main(argv=None):
 
     plotter = scene(scene_dir, size)
     concrete, openings, tunnels = galleries.build(track)
+    plotter.add_mesh(galleries.rails(track), color="#6b6660", specular=0.6, ambient=0.35, diffuse=0.7)
     terrain = plotter.meshes[0]  # the orthophoto's uv is affine in x, y: the tunnels take it too
     xy1 = lambda points: np.column_stack([points[:, :2], np.ones(len(points))])
     affine = np.linalg.lstsq(xy1(terrain.points), terrain.point_data["uv"], rcond=None)[0]

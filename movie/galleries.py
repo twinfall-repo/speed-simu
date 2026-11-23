@@ -1,4 +1,4 @@
-"""The avalanche galleries and the tunnel portals of the railway, low detail:
+"""The avalanche galleries, the tunnel portals and the rails of the railway, low detail:
 
     python galleries.py RAILWAY_CSV      # galleries_preview.png, the first gallery
 
@@ -8,6 +8,9 @@ the lake side a pillar every PILLARS m, between which the train shows. Along
 the stretches of kind 2 (tunnel), a solid arched tube that hides the train,
 itself hidden where the mountain is over it; at every mouth of one, a
 portal: an arched headwall, dark in its opening. A likeness, not a survey of the real structures.
+
+rails() gives the two rails, GAUGE apart, their tops on the track's line
+(where train.py sets the wheels), outside the tunnels.
 
 build() gives (concrete, openings, tunnels): the galleries and portals, the
 dark openings of the portals, and the tunnels' tubes, for movie.py to drape
@@ -27,6 +30,7 @@ WALL = 0.8  # m, the mountain wall's thickness
 ARCH = 3.6, 4.6  # m, a portal opening's half width and the height its arch springs from
 RING = 2.0  # m, the headwall round the opening
 LINING = 0.8  # m, the tunnel's lining round the opening
+GAUGE, RAIL = 1.435, (0.07, 0.15)  # m, standard gauge; a rail's head width and height
 
 
 def frames(path):
@@ -79,6 +83,23 @@ def portal(point, ahead, lake, outward):
                        np.column_stack([np.full(m - 1, 4), k, k + 1, m + k + 1, m + k]).ravel())
     dark = pv.PolyData(to3(inner, -0.05), np.concatenate([[m], np.arange(m)])).triangulate()  # on the tube's end
     return wall, dark
+
+
+def rails(track):
+    """track: the rows of railway.csv, s x y z kind."""
+    s, path, kind = track[:, 0], track[:, 1:4], track[:, 4].astype(int)
+    _, lake = frames(path)
+    w, h = RAIL
+    parts = []
+    for run in np.split(np.arange(len(s)), np.flatnonzero(np.diff(kind == 2)) + 1):
+        if kind[run[0]] == 2 or len(run) < 2:
+            continue
+        for side in (-1, 1):
+            a = side * (GAUGE + w) / 2  # the gauge is between the heads' inner faces
+            section = np.array([[a - w / 2, -h], [a + w / 2, -h], [a + w / 2, 0], [a - w / 2, 0]])
+            parts.append(extrude(section, path[run], lake[run]))
+    print(f"rails: {len(parts) // 2} runs outside the tunnels, gauge {GAUGE} m", flush=True)
+    return parts[0].append_polydata(*parts[1:])
 
 
 def build(track):
