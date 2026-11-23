@@ -42,7 +42,7 @@ python train_series.py ../../../dtm_voxelization/output/rialba/railway.csv \
     ../../../dtm_voxelization/output/rialba/train
 ```
 
-`train.py` builds a five-car train after Trenord's "Donizetti" (about 112 m),
+`train.py` builds the double trainset of the TTB-2D loads, two coupled units of five cars after Trenord's "Donizetti" (about 225 m),
 low detail, with a painted livery texture; `python train.py side.png` uses a
 side view of a real car instead. `train_series.py` writes the train running
 along the railway at 80 km/h as `train_NNNN.vtu`, one every 0.2 s, with

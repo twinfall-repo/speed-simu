@@ -27,7 +27,7 @@ import numpy as np
 import pyvista as pv
 from scipy.spatial import cKDTree
 
-from train import CARS, END_CAR, GAP, MID_CAR, build, place
+from train import LENGTH, build, place
 
 SPEED = 80 / 3.6  # m/s, the line's speed limit there (OSM maxspeed 80)
 DT = 0.2  # s between frames
@@ -47,7 +47,7 @@ def main(argv=None):
     texture.to_image().save(out / "train_texture.png")
     pixels = np.asarray(texture.to_array())  # (h, w, 3), row 0 at v = 1
     h, w = pixels.shape[:2]
-    length = 2 * END_CAR + (CARS - 2) * MID_CAR + (CARS - 1) * GAP
+    length = LENGTH
     heads = np.arange(0.0, s[-1] + length, SPEED * DT)
     print(f"railway {argv[0]}: {s[-1]:.0f} m; train {length:.1f} m at {SPEED * 3.6:.0f} km/h, "
           f"{len(heads)} frames every {DT:g} s, {len(heads) * DT:.1f} s in all", flush=True)

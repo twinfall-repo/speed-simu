@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 import pyvista as pv
 
-from train import build, place
+from train import LENGTH, build, place
 
 SPEED = 80 / 3.6  # m/s, as train_series.py
 S_START, S_OUT, S_IN, S_BACK = 150.0, 420.0, 700.0, 1180.0  # m along the railway
@@ -57,7 +57,7 @@ def follow(path, s, head):
     ahead[2] = 0
     ahead /= np.linalg.norm(ahead)
     lake = -np.cross(ahead, [0, 0, 1])  # the lake lies left of the train running north-west
-    middle = np.array([np.interp(head - 56, s, path[:, i]) for i in range(3)])
+    middle = np.array([np.interp(head - LENGTH / 2, s, path[:, i]) for i in range(3)])
     return middle + 20 * ahead + 135 * lake + [0, 0, 40], middle + [0, 0, 8]
 
 

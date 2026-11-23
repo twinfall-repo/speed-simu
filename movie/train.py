@@ -2,8 +2,10 @@
 
     python movie/train.py [SIDE.png]        # writes movie/train_preview.png
 
-Five cars after the Trenord "Donizetti" (Alstom Coradia Stream) that serve
-the Lecco-Tirano line: about 110 m, 2.9 m wide, 4 m over the rail. The
+Two coupled units of five cars, the double trainset of the TTB-2D train loads
+(cases/rialba_ttb), after the Trenord "Donizetti" (Alstom Coradia Stream) that
+serve the Lecco-Tirano line: each unit about 112 m with a cab at either end,
+the pair about 225 m, 2.9 m wide, 4 m over the rail. The
 dimensions are a likeness, not a drawing, and so is the livery, painted here
 in a texture: white body, dark window band, green and blue stripes, a cab
 face with a dark windscreen and two headlights. Any side view of a car can
@@ -13,9 +15,9 @@ painted face.
 
 Each car is a cross-section swept along the car, with the texture's u along
 the car and its v around the section, bottom of one side to the bottom of the
-other over the roof. The two end cars taper into a nose over NOSE metres and
-end in a cap carrying the cab's face; between cars the caps are dark, as a
-gangway.
+other over the roof. The two end cars of each unit taper into a nose over NOSE
+metres and end in a cap carrying the cab's face, so the two units meet nose to
+nose; between the other cars the caps are dark, as a gangway.
 
 `build(side)` gives the cars in their own frame (x along the car from its
 centre, z up from the rail) and the texture; `place(cars, path, s_head)`
@@ -32,7 +34,9 @@ import pyvista as pv
 from PIL import Image, ImageDraw
 
 END_CAR, MID_CAR, GAP = 23.0, 21.0, 0.8  # m, car lengths and the gap between cars
-CARS = 5
+CARS = 5  # cars in a unit, a cab at each end
+UNITS = 2  # units coupled into the train
+LENGTH = UNITS * (2 * END_CAR + (CARS - 2) * MID_CAR + (CARS - 1) * GAP) + (UNITS - 1) * GAP  # m
 WIDTH, HEIGHT, FLOOR = 2.90, 4.00, 0.45  # m, body width, roof over the rail, body bottom
 NOSE = 3.5  # m over which an end car narrows into its nose
 BOGIE = 0.35  # bogie centres at this fraction of the car length from its centre
@@ -131,14 +135,15 @@ def car(length, nose_front, nose_back, nx=48):
 def build(side=None):
     """([(car mesh, length, offset of its centre behind the head)], texture)."""
     image = livery(side)
-    print(f"train: {CARS} cars, texture {'from ' + str(side) if side else 'painted'} "
+    print(f"train: {UNITS} units of {CARS} cars, texture {'from ' + str(side) if side else 'painted'} "
           f"{image.size[0]} x {image.size[1]}", flush=True)
     cars, behind = [], 0.0
-    for c in range(CARS):
-        length = END_CAR if c in (0, CARS - 1) else MID_CAR
-        mesh = car(length, nose_front=c == 0, nose_back=c == CARS - 1)
-        cars.append((mesh, length, behind + length / 2))
-        behind += length + GAP
+    for _ in range(UNITS):
+        for c in range(CARS):
+            length = END_CAR if c in (0, CARS - 1) else MID_CAR
+            mesh = car(length, nose_front=c == 0, nose_back=c == CARS - 1)
+            cars.append((mesh, length, behind + length / 2))
+            behind += length + GAP
     print(f"  {behind - GAP:.1f} m long, {sum(m.n_cells for m, _, _ in cars):,} cells", flush=True)
     return cars, pv.Texture(np.asarray(image))  # pv.Texture puts the image's top at v = 1
 
