@@ -8,14 +8,13 @@ there, the land and lake around them of `backdrop`; the overhead line of
 catenary.py and the galleries and tunnel portals of galleries.py along the
 railway. The
 train of train.py runs along the railway at SPEED, real time, and the camera
-goes through three shots, keyed on where the head of the train is:
+goes through its shots, keyed on where the head of the train is:
 
-  follow    from S_START, abreast of the train, out over the lake
+  follow    from S_START, abreast of the head of the train, out over the lake
   overview  from S_OUT the camera pulls back to the whole mountain
-  towers    from S_IN it closes in on the towers of Rialba, and holds them as
-            the train passes beneath and into its tunnel
-  follow    from S_BACK, while the train is in the tunnel, back abreast of
-            it, to see it come out and run to the end of the domain
+  towers    from S_IN, as the train comes out of the long avalanche gallery,
+            it closes in on the towers of Rialba, and holds them to the end,
+            as the train passes beneath and into its tunnel
 
 between which it eases smoothly. low is 960 x 540 at 12 frames a second,
 for a laptop; high 1920 x 1080 at 30, for the cluster. Frames go to
@@ -36,11 +35,12 @@ import pyvista as pv
 
 import catenary
 import galleries
-from train import LENGTH, build, place
+from train import build, place
 
 SPEED = 80 / 3.6  # m/s, as train_series.py
-S_START, S_OUT, S_IN, S_BACK = 150.0, 420.0, 700.0, 1180.0  # m along the railway
 EASE = 220.0  # m of the train's run over which one shot eases into the next
+S_IN = 634.0  # m along the railway, where the long gallery ends
+S_START, S_OUT = 150.0, S_IN - EASE  # the overview reached just as the zoom in starts
 OVERVIEW = ((-600.0, -4200.0, 1900.0), (0.0, 200.0, -150.0))  # camera, focal point
 TOWERS = ((-720.0, -560.0, -80.0), (-240.0, 40.0, -170.0))
 QUALITY = {"low": ((960, 540), 12), "high": ((1920, 1080), 30)}
@@ -54,15 +54,15 @@ def smooth(a, b, x):
 
 
 def follow(path, s, head):
-    """Camera and focal point abreast of the train, out over the lake, with the
-    mountain behind it."""
+    """Camera and focal point abreast of the head of the train, out over the
+    lake, with the mountain behind it: the nose and the first cars in view."""
     k = np.searchsorted(s, head)
     ahead = path[min(k + 10, len(s) - 1)] - path[max(k - 10, 0)]
     ahead[2] = 0
     ahead /= np.linalg.norm(ahead)
     lake = -np.cross(ahead, [0, 0, 1])  # the lake lies left of the train running north-west
-    middle = np.array([np.interp(head - LENGTH / 2, s, path[:, i]) for i in range(3)])
-    return middle + 20 * ahead + 135 * lake + [0, 0, 40], middle + [0, 0, 8]
+    front = np.array([np.interp(head - 15, s, path[:, i]) for i in range(3)])
+    return front + 50 * ahead + 70 * lake + [0, 0, 22], front + [0, 0, 4]
 
 
 def camera(path, s, head):
@@ -74,9 +74,7 @@ def camera(path, s, head):
     closer = smooth(S_IN, S_IN + EASE, head)
     cam, focal = (1 - closer) * cam + closer * np.array(TOWERS[0]), \
         (1 - closer) * focal + closer * np.array(TOWERS[1])
-    again = smooth(S_BACK, S_BACK + EASE, head)
-    near, at = follow(path, s, head)
-    return (1 - again) * cam + again * near, (1 - again) * focal + again * at
+    return cam, focal
 
 
 def scene(scene_dir, size):
@@ -126,10 +124,18 @@ def main(argv=None):
     print(f"{quality}: {size[0]} x {size[1]} at {fps} fps, {len(heads)} frames, "
           f"{len(heads) / fps:.1f} s; head from s {S_START:g} to {s[-1]:.0f} m at "
           f"{SPEED * 3.6:.0f} km/h; shots follow, overview from s {S_OUT:g}, towers from "
-          f"s {S_IN:g}, follow again from s {S_BACK:g}", flush=True)
+          f"s {S_IN:g} to the end", flush=True)
 
     plotter = scene(scene_dir, size)
-    concrete, openings = galleries.build(track)
+    concrete, openings, tunnels = galleries.build(track)
+    terrain = plotter.meshes[0]  # the orthophoto's uv is affine in x, y: the tunnels take it too
+    xy1 = lambda points: np.column_stack([points[:, :2], np.ones(len(points))])
+    affine = np.linalg.lstsq(xy1(terrain.points), terrain.point_data["uv"], rcond=None)[0]
+    tunnels.point_data["uv"] = xy1(tunnels.points) @ affine
+    tunnels.active_texture_coordinates = tunnels.point_data["uv"]
+    photo = pv.read_texture(scene_dir / "orthophoto_0.5m.png")
+    photo.interpolate = True
+    plotter.add_mesh(tunnels, texture=photo, ambient=0.35, diffuse=0.7)
     plotter.add_mesh(concrete, color="#a29e94", ambient=0.35, diffuse=0.7)
     plotter.add_mesh(openings, color="#151515", ambient=0.35, diffuse=0.7)
     masts, wires = catenary.build(track)

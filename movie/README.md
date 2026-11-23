@@ -56,7 +56,9 @@ catenary.py ../../../dtm_voxelization/output/rialba/railway.csv` for
 
 `galleries.py` builds, from the `kind` of `railway.csv`, the avalanche
 galleries (kind 1: a wall on the mountain side, the roof, a pillar every 8 m
-on the lake side) and a portal at each mouth of a tunnel (kind 2), which
+on the lake side), the tunnels (kind 2) as solid tubes that hide the train,
+draped by `movie.py` in the orthophoto where the DTM leaves them in the open,
+and a portal at each of their mouths, which
 `movie.py` adds too (`python galleries.py .../railway.csv` for
 `galleries_preview.png`). In the galleries the wires hang from the roof: no
 masts there.
@@ -94,10 +96,9 @@ top of `movie.py`:
 
 | from s (m) | shot |
 |---|---|
-| `S_START` 150 | abreast of the train, out over the lake |
-| `S_OUT` 420 | eases (over `EASE` m) into `OVERVIEW`, the whole mountain |
-| `S_IN` 700 | eases into `TOWERS`, the towers with the shore below |
-| `S_BACK` 1180 | while the train is in the north-western tunnel, eases back abreast of it, to see it come out and run to the end of the domain |
+| `S_START` 150 | abreast of the head of the train, out over the lake: the nose and the first cars |
+| `S_OUT` 414 | eases (over `EASE` m) into `OVERVIEW`, the whole mountain, reached just as the next shot starts |
+| `S_IN` 634 | as the train comes out of the long avalanche gallery, eases into `TOWERS`, the towers with the shore below, held to the end |
 
 `OVERVIEW` and `TOWERS` are (camera, focal point) pairs in the DTM's frame;
 `SUN` the light that makes the lake glint.
