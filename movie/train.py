@@ -141,9 +141,9 @@ def car(length, nose_front, nose_back, nx=48):
     caps = []
     for end, cab in ((0, nose_back), (nx - 1, nose_front)):  # a flat cap at each end
         ring = np.vstack([points[end], points[end].mean(axis=0)])
+        n = len(ring) - 1  # the section is open at the floor: the fan wraps round to close it
         cap = pv.PolyData(ring, np.column_stack([
-            np.full(len(ring) - 2, 3), np.arange(len(ring) - 2), np.arange(1, len(ring) - 1),
-            np.full(len(ring) - 2, len(ring) - 1)]).ravel())
+            np.full(n, 3), np.arange(n), (np.arange(n) + 1) % n, np.full(n, n)]).ravel())
         if cab:  # the cab's face, spread over the end as seen from ahead
             span = np.ptp(ring[:, 1]) or 1
             cap.point_data["uv"] = np.column_stack([
