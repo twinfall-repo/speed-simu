@@ -69,6 +69,19 @@ The run is in `output/rialba_source/<run>/` and archived in
 `output/rialba_source/<run>.tar.zst`; `run_info.txt` there says what was run,
 `speed.out` is SPEED's output. The PBS log is in `logs/`.
 
+The points of the case's `LS.input` (the seven surveyed points and the five
+towers, for the Rialba cases) are written by SPEED every `TMONITOR` steps
+into `MONITOR/`, as raw binary split by MPI process. Outside the container,
+with Python and numpy,
+
+```bash
+python monitors.py output/rialba/<run>
+```
+
+gathers them into `output/rialba/<run>/monitors/point_NN.txt`, one per point
+of `LS.input`: time, then displacement, velocity, acceleration, stress, strain
+and rotation, as many as `OPTIOUT` asks for.
+
 ## A new case
 
 ```bash
