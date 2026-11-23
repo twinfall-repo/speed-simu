@@ -4,7 +4,8 @@
 
 SCENE_DIR is dtm_voxelization's output of the case (output/rialba): the
 textured terrain and lake of `orthophoto`, the railway of `railway` and, if
-there, the land and lake around them of `backdrop`. The
+there, the land and lake around them of `backdrop`; the overhead line of
+catenary.py along the railway. The
 train of train.py runs along the railway at SPEED, real time, and the camera
 goes through three shots, keyed on where the head of the train is:
 
@@ -32,6 +33,7 @@ from pathlib import Path
 import numpy as np
 import pyvista as pv
 
+import catenary
 from train import LENGTH, build, place
 
 SPEED = 80 / 3.6  # m/s, as train_series.py
@@ -125,6 +127,9 @@ def main(argv=None):
           f"s {S_IN:g}, follow again from s {S_BACK:g}", flush=True)
 
     plotter = scene(scene_dir, size)
+    masts, wires = catenary.build(track)
+    plotter.add_mesh(masts, color="#8a8f94", ambient=0.35, diffuse=0.7)
+    plotter.add_mesh(wires, color="#3a3a3a", line_width=size[0] / 960)  # a pixel wide in low, two in high
     cars, texture = build()
     train = place(cars, path, s, heads[0])
     plotter.add_mesh(train, texture=texture, ambient=0.35, diffuse=0.7)

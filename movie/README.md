@@ -48,6 +48,12 @@ side view of a real car instead. `train_series.py` writes the train running
 along the railway at 80 km/h as `train_NNNN.vtu`, one every 0.2 s, with
 `train.pvd`, the time series, and `train_texture.png`.
 
+`catenary.py` builds the overhead line, which `movie.py` adds by itself: a
+mast every 50 m outside the tunnels on the lake side, with its brackets, the
+contact wire and the messenger wire sagging between masts (`python
+catenary.py ../../../dtm_voxelization/output/rialba/railway.csv` for
+`catenary_preview.png`). A likeness: the masts are not where the real ones are.
+
 ## 3. Looking at it in ParaView
 
 - **Terrain**: open `orthophoto_0.5m.vtp`, Coloring *Solid Color* (white),
