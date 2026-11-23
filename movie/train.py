@@ -7,8 +7,10 @@ Two coupled units of five cars, the double trainset of the TTB-2D train loads
 serve the Lecco-Tirano line: each unit about 112 m with a cab at either end,
 the pair about 225 m, 2.9 m wide, 4 m over the rail. The
 dimensions are a likeness, not a drawing, and so is the livery, painted here
-in a texture: white body, dark window band, green and blue stripes, a cab
-face with a dark windscreen and two headlights. Any side view of a car can
+in a texture after the Trenord livery of photos of the train on Wikimedia
+Commons: lime green body between a blue skirt and a light blue band under
+the roof, yellow-green doors, a white cab with a green nose round a wide dark
+windscreen. Any side view of a car can
 replace the painted side, given as SIDE.png and stretched over both sides of
 every car (its left edge goes to the car's front); the cabs keep their
 painted face.
@@ -40,35 +42,56 @@ LENGTH = UNITS * (2 * END_CAR + (CARS - 2) * MID_CAR + (CARS - 1) * GAP) + (UNIT
 WIDTH, HEIGHT, FLOOR = 2.90, 4.00, 0.45  # m, body width, roof over the rail, body bottom
 NOSE = 3.5  # m over which an end car narrows into its nose
 BOGIE = 0.35  # bogie centres at this fraction of the car length from its centre
-WHITE, BAND, GREEN, BLUE, GREY, DARK, ROOF = (
-    (238, 240, 240), (40, 44, 52), (0, 150, 70), (0, 75, 145), (120, 124, 128), (30, 30, 34),
-    (185, 188, 192))
+# the Trenord livery of the ETR 204 "Donizetti", after photos on Wikimedia Commons
+WHITE, LIME, LIGHT_BLUE, BLUE, DOOR, GLASS, FRAME, DARK, ROOF, RED = (
+    (238, 240, 240), (122, 201, 67), (86, 156, 222), (30, 92, 176), (206, 222, 78),
+    (34, 38, 44), (150, 156, 160), (36, 38, 42), (178, 182, 186), (210, 40, 40))
 SIDE_U, FACE_U = 0.88, 0.90  # the texture's sides end at SIDE_U, a cab's face starts at FACE_U
 
 
 def livery(side=None, width=2048, height=512):
     """The texture: the side of a car, front to the left, over u 0..SIDE_U
-    (painted, or SIDE stretched there), and the face of a cab past FACE_U."""
+    (painted, or SIDE stretched there), and the face of a cab past FACE_U.
+    Up the side: dark underframe, blue skirt, a thin white line, the lime
+    green body with its windows and yellow-green doors, a white line, a
+    light blue band under the roof, the grey roof. The cab: white, its upper
+    nose lime green round a wide black windscreen, blue at the bottom, the
+    headlights and the red coupler."""
     image = Image.new("RGB", (width, height), WHITE)
     draw = ImageDraw.Draw(image)
     y = lambda frac: int(height * (1 - frac))  # frac of the height, from the bottom
     x = lambda frac: int(width * frac)  # frac of the width, from the left
     end = x(SIDE_U)
-    draw.rectangle([0, y(0.12), width, height], fill=DARK)  # underframe, cab too
-    draw.rectangle([0, y(0.20), width, y(0.12)], fill=GREEN)  # skirt stripes, cab too
-    draw.rectangle([0, y(0.23), width, y(0.20)], fill=BLUE)
-    draw.rectangle([0, y(0.62), end, y(0.42)], fill=BAND)  # windows
-    for door in (0.22, 0.78):  # two pairs of doors per car
-        draw.rectangle([x(SIDE_U * (door - 0.035)), y(0.60), x(SIDE_U * (door + 0.035)), y(0.13)],
-                       fill=GREY, outline=DARK, width=4)
-    draw.rectangle([0, y(1.0), end, y(0.88)], fill=ROOF)
+    bands = ((0.00, 0.07, DARK), (0.07, 0.28, BLUE), (0.28, 0.32, WHITE), (0.32, 0.84, LIME),
+             (0.84, 0.87, WHITE), (0.87, 0.95, LIGHT_BLUE), (0.95, 1.00, ROOF))
+    for lo, hi, colour in bands:
+        draw.rectangle([0, y(hi), end, y(lo)], fill=colour)
+    windows = np.linspace(0.06, 0.94, 9)
+    for w in windows:  # windows, a grey frame round dark glass, not over the doors
+        if min(abs(w - 0.22), abs(w - 0.78)) < 0.07:
+            continue
+        x0, x1 = x(SIDE_U * (w - 0.035)), x(SIDE_U * (w + 0.035))
+        draw.rounded_rectangle([x0, y(0.79), x1, y(0.47)], radius=8, fill=GLASS, outline=FRAME, width=5)
+    for door in (0.22, 0.78):  # two doors per car, glazed in their upper half
+        x0, x1 = x(SIDE_U * (door - 0.04)), x(SIDE_U * (door + 0.04))
+        draw.rectangle([x0, y(0.82), x1, y(0.09)], fill=DOOR, outline=DARK, width=4)
+        mid = (x0 + x1) // 2
+        draw.line([mid, y(0.82), mid, y(0.09)], fill=DARK, width=3)
+        for gx0, gx1 in ((x0 + 10, mid - 8), (mid + 8, x1 - 10)):
+            draw.rounded_rectangle([gx0, y(0.76), gx1, y(0.45)], radius=6, fill=GLASS)
     if side:
         image.paste(Image.open(side).convert("RGB").resize((end, height)), (0, 0))
     face = x(FACE_U)
-    draw.rectangle([face, y(0.88), width, y(0.52)], fill=BAND)  # windscreen
-    for lamp in (0.2, 0.8):  # headlights
+    draw.rectangle([face, 0, width, height], fill=WHITE)
+    draw.rectangle([face, y(0.97), width, y(0.60)], fill=LIME)  # the upper nose
+    draw.rounded_rectangle([face + 14, y(0.90), width - 14, y(0.56)], radius=18, fill=GLASS)  # windscreen
+    draw.rectangle([face, y(0.24), width, y(0.0)], fill=BLUE)  # the lower front
+    for lamp in (0.18, 0.82):  # headlights, in dark surrounds
         cx = face + (width - face) * lamp
-        draw.ellipse([cx - 8, y(0.33) - 8, cx + 8, y(0.33) + 8], fill=(255, 250, 220))
+        draw.ellipse([cx - 16, y(0.42) - 11, cx + 16, y(0.42) + 11], fill=DARK)
+        draw.ellipse([cx - 8, y(0.42) - 6, cx + 8, y(0.42) + 6], fill=(255, 250, 220))
+    cx = face + (width - face) / 2
+    draw.rectangle([cx - 14, y(0.16), cx + 14, y(0.06)], fill=RED)  # the coupler
     return image
 
 
