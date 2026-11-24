@@ -28,7 +28,9 @@ From: rockylinux:9
 # each; the fields on the free surface). pyvista, vtk, matplotlib and ffmpeg
 # (imageio-ffmpeg, a static build: Rocky has none) for the movies of
 # movie/speed_movie.py, rendered off screen by Mesa's software EGL (llvmpipe,
-# no GPU, no X): Rocky 9 has no OSMesa any more.
+# no GPU, no X): Rocky 9 has no OSMesa any more. numpy comes from pip only:
+# Rocky's python3-numpy (1.20) and pip's newer one, pulled in by scipy and
+# pyvista, mixed into a numpy that pyvista could not import.
 # ssh is there for mpirun to start orted on the other nodes of a job, inside
 # this same image (see SPEED_LAUNCH_AGENT in apptainer/shell.sh).
 
@@ -57,11 +59,11 @@ From: rockylinux:9
     dnf config-manager --set-enabled crb
     dnf install -y openmpi openmpi-devel metis metis-devel \
         gcc-toolset-13-gcc-gfortran make git zstd vim-enhanced less openssh-clients \
-        python3 python3-numpy python3-pip \
+        python3 python3-pip \
         mesa-libEGL mesa-libGL mesa-dri-drivers libX11 libXrender libXext libXcursor
     dnf clean all
-    rpm -q openmpi pmix ucx libfabric libpsm2 metis python3-numpy mesa-libEGL mesa-dri-drivers
-    pip3 install --no-cache-dir "vtk>=9.4" pyvista scipy matplotlib pillow imageio-ffmpeg
+    rpm -q openmpi pmix ucx libfabric libpsm2 metis mesa-libEGL mesa-dri-drivers
+    pip3 install --no-cache-dir numpy "vtk>=9.4" pyvista scipy matplotlib pillow imageio-ffmpeg
     VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow EGL_PLATFORM=surfaceless python3 -c "import pyvista as pv; \
         p = pv.Plotter(off_screen=True, window_size=(64, 64)); p.add_mesh(pv.Sphere()); \
         print('off-screen render', p.screenshot(return_img=True).shape, p.ren_win.GetClassName())"
