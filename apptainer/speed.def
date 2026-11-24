@@ -14,6 +14,11 @@ From: rockylinux:9
 # the displacement only; a face shared by two elements only when they share
 # its 4 corners (the crack tips of dtm_voxelization); nodal strain, stress and
 # rotation averaged over all the elements at partition borders.
+# The image is built from the branch vtkwrite-velocity, master plus two more
+# words on the VTKWRITE line, XDMF only: VELOCITY writes Vel, the velocity at
+# the snapshot's step; VELVV writes VelVV, the mean of v v^T over the steps
+# since the previous snapshot (xx yy zz xy yz zx), whatever is faster than the
+# snapshots included; NODISP leaves the displacement out.
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
 # SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
@@ -51,7 +56,8 @@ From: rockylinux:9
     export PATH=/usr/lib64/openmpi/bin:${PATH}
     export OMPI_FC=/opt/rh/gcc-toolset-13/root/usr/bin/gfortran
 
-    git clone --depth 1 https://bitbucket.org/ilmaz/speed.git ${SPEED_FOLDER}
+    # the branch with VTKWRITE ... VELOCITY VELVV (bitbucket, not yet in master): back to master once merged
+    git clone --depth 1 --branch vtkwrite-velocity https://bitbucket.org/ilmaz/speed.git ${SPEED_FOLDER}
     # written to a file: inside the container the clone belongs to root, and
     # git refuses to read a repository of another user (safe.directory)
     git -C ${SPEED_FOLDER} log -1 --format='%H %ad %s' --date=short > /opt/speed-commit.txt

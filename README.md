@@ -69,6 +69,16 @@ The run is in `output/rialba_source/<run>/` and archived in
 `output/rialba_source/<run>.tar.zst`; `run_info.txt` there says what was run,
 `speed.out` is SPEED's output. The PBS log is in `logs/`.
 
+The Rialba cases write, every `VTKWRITE` steps, `VTKOUT/SPEED.xmf` for
+ParaView with the displacement `Disp`, the velocity `Vel` at that step and
+`VelVV`, the mean of v v^T over the steps since the previous snapshot (xx yy
+zz xy yz zx): the snapshots are far sparser than the steps, so `Vel` aliases
+what is faster than them, `VelVV` does not. √(eᵀ VelVV e) is the RMS velocity
+along a direction e, √(tr VelVV) its magnitude. The three take 12 float32 per
+GLL node and snapshot, four times the displacement alone; `NODISP` on the
+`VTKWRITE` line leaves `Disp` out. The image builds SPEED's branch
+`vtkwrite-velocity`, which has these words, until they are in master.
+
 The points of the case's `LS.input` (the seven surveyed points and the five
 towers, for the Rialba cases) are written by SPEED every `TMONITOR` steps
 into `MONITOR/`, as raw binary split by MPI process. At the end of the run,

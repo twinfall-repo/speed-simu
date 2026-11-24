@@ -42,7 +42,7 @@
 # started on the other nodes by SPEED_LAUNCH_AGENT (both from apptainer/shell.sh).
 # SPEED_THREADS (default 1) is the OpenMP threads of each MPI process.
 # The format of the VTKWRITE output is on its line of SPEED.input, e.g.
-# VTKWRITE T 100 XDMF NOSTRAIN (see apptainer/speed.def).
+# VTKWRITE T 100 XDMF NOSTRAIN VELOCITY VELVV (see apptainer/speed.def).
 
 set -euo pipefail
 
