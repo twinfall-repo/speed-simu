@@ -262,6 +262,20 @@ if [ -d MONITOR ]; then
     fi
 fi
 
+# the fields on the free surface: the displacement, the velocity in the
+# railway's frame and normal to the towers' fractures; its log is surface.log
+if [ -f VTKOUT/SPEED.xmf ]; then
+    # a failure here is reported, never fatal: the archive must still be made
+    if python3 "${here}/surface.py" "${run_dir}" > surface.log 2>&1; then
+        echo "surface:   ${run_dir}/surface/surface.xmf and maps.xmf; $(grep -m1 'free surface:' surface.log | cut -c11-)" \
+            | tee -a run_info.txt
+        grep 'over the run:' surface.log | cut -c11- | sed 's/^/           /' | tee -a run_info.txt || true
+    else
+        echo "surface:   FAILED, last lines of surface.log:" | tee -a run_info.txt >&2
+        tail -n 5 surface.log | tee -a run_info.txt >&2
+    fi
+fi
+
 # also after a failure: what SPEED did write is what tells why
 archive="${run_dir}.tar.zst"
 started=$(date +%s)

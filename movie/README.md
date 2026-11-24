@@ -107,6 +107,36 @@ top of `movie.py`:
 On the cluster, through the dtm_voxelization image (it has pyvista's vtk) or
 any Python with pyvista and ffmpeg, off screen.
 
+## 5. The movie of a SPEED run with the train loads
+
+```bash
+python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FRAME ...]
+```
+
+From the repository's root. `RUN_DIR` is a run of `cases/rialba_ttb` (its
+`surface/` and `monitors/`, from `run_case.sh`), `SCENE_DIR` the scene of
+step 1. The train runs as in the loads of `TTB2SPEED` (from each load's first
+non-zero time: 80 km/h towards the south, out of the tunnel at s 984 m), the
+x displacement spreads over the orthophoto, and the five points over the
+towers move in a plot below, marked in the view with the same colours. The
+field goes from the free surface of the voxel mesh to the terrain of the
+orthophoto (every 2 m) as the inverse-distance mean of the 4 nearest surface
+points: far from the towers the 42 m cells stand up to ~20 m off the DTM.
+The colours are clear around zero, opaque towards the 99.5 percentile of
+|u_x| over the run. The movie runs 2x slower than the simulation (`SLOW`),
+the field interpolated between snapshots. Constants at the top of the
+script: `COMPONENT`, `MONITORS`, `CAMERA`, `SLOW`, `CLIP`.
+
+The solution is too heavy to bring home: render on the cluster, with the
+SPEED image (pyvista, matplotlib and ffmpeg are in it, off screen through
+Mesa's software EGL), the scene copied there once:
+
+```bash
+scp -r dtm_voxelization/output/rialba/{orthophoto_0.5m.*,lake*,backdrop*,railway.csv} CLUSTER:SCENE_DIR/
+SPEED_NODES=1 SPEED_WALLTIME=04:00:00 apptainer/submit_slurm.sh -- \
+    python3 movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR high
+```
+
 ## Still to do
 
 - The SPEED run with sources along the railway, then its surface field on the

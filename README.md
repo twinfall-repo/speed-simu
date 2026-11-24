@@ -71,13 +71,23 @@ The run is in `output/rialba_source/<run>/` and archived in
 
 The Rialba cases write, every `VTKWRITE` steps, `VTKOUT/SPEED.xmf` for
 ParaView with the displacement `Disp`, the velocity `Vel` at that step and
-`VelVV`, the mean of v v^T over the steps since the previous snapshot (xx yy
-zz xy yz zx): the snapshots are far sparser than the steps, so `Vel` aliases
+`VelVV`, the mean of v v^T over the steps since the previous snapshot (a
+symmetric tensor, xx xy xz yy yz zz): the snapshots are far sparser than the steps, so `Vel` aliases
 what is faster than them, `VelVV` does not. √(eᵀ VelVV e) is the RMS velocity
 along a direction e, √(tr VelVV) its magnitude. The three take 12 float32 per
 GLL node and snapshot, four times the displacement alone; `NODISP` on the
 `VTKWRITE` line leaves `Disp` out. The image builds SPEED's branch
 `vtkwrite-velocity`, which has these words, until they are in master.
+
+At the end of a run, before the archive, `run_case.sh` runs `surface.py`
+(log in `surface.log`): the fields on the free surface of the mesh, in
+`output/rialba/<run>/surface/` (`surface.xmf`, one grid per snapshot, and
+`maps.xmf`, for ParaView): the displacement, the velocity and its RMS in the
+frame of the railway (radial from the track, along it, vertical, from
+`post/railway.csv`) and, within 30 m of a fracture of the towers
+(`post/fractures/*.stl`), along its normal, towards the valley; over the
+whole run, the RMS of all the steps and the largest RMS of a snapshot. By
+hand, with numpy and scipy: `python surface.py output/rialba/<run>`.
 
 The points of the case's `LS.input` (the seven surveyed points and the five
 towers, for the Rialba cases) are written by SPEED every `TMONITOR` steps

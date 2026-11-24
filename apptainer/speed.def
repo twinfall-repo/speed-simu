@@ -17,14 +17,18 @@ From: rockylinux:9
 # The image is built from the branch vtkwrite-velocity, master plus two more
 # words on the VTKWRITE line, XDMF only: VELOCITY writes Vel, the velocity at
 # the snapshot's step; VELVV writes VelVV, the mean of v v^T over the steps
-# since the previous snapshot (xx yy zz xy yz zx), whatever is faster than the
+# since the previous snapshot (xx xy xz yy yz zz), whatever is faster than the
 # snapshots included; NODISP leaves the displacement out.
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
 # SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
 # system's 11: SPEED includes mpif.h, so no MPI Fortran module is involved.
-# python3 and numpy are there for monitors.py, which run_case.sh runs at the end
-# of a run to gather the monitored points into one text file each.
+# python3, numpy and scipy are there for monitors.py and surface.py, which
+# run_case.sh runs at the end of a run (the monitored points, one text file
+# each; the fields on the free surface). pyvista, vtk, matplotlib and ffmpeg
+# (imageio-ffmpeg, a static build: Rocky has none) for the movies of
+# movie/speed_movie.py, rendered off screen by Mesa's software EGL (llvmpipe,
+# no GPU, no X): Rocky 9 has no OSMesa any more.
 # ssh is there for mpirun to start orted on the other nodes of a job, inside
 # this same image (see SPEED_LAUNCH_AGENT in apptainer/shell.sh).
 
@@ -40,6 +44,9 @@ From: rockylinux:9
     # the shared memory transport of OpenMPI tries CMA, which needs ptrace
     # between the ranks and fails in a container; plain copies through /dev/shm
     export OMPI_MCA_btl_vader_single_copy_mechanism=none
+    # VTK renders off screen through EGL on Mesa's software driver
+    export VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow
+    export EGL_PLATFORM=surfaceless
 
 %post
     set -e
@@ -50,9 +57,14 @@ From: rockylinux:9
     dnf config-manager --set-enabled crb
     dnf install -y openmpi openmpi-devel metis metis-devel \
         gcc-toolset-13-gcc-gfortran make git zstd vim-enhanced less openssh-clients \
-        python3 python3-numpy
+        python3 python3-numpy python3-pip \
+        mesa-libEGL mesa-libGL mesa-dri-drivers libX11 libXrender libXext libXcursor
     dnf clean all
-    rpm -q openmpi pmix ucx libfabric libpsm2 metis python3-numpy
+    rpm -q openmpi pmix ucx libfabric libpsm2 metis python3-numpy mesa-libEGL mesa-dri-drivers
+    pip3 install --no-cache-dir "vtk>=9.4" pyvista scipy matplotlib pillow imageio-ffmpeg
+    VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow EGL_PLATFORM=surfaceless python3 -c "import pyvista as pv; \
+        p = pv.Plotter(off_screen=True, window_size=(64, 64)); p.add_mesh(pv.Sphere()); \
+        print('off-screen render', p.screenshot(return_img=True).shape, p.ren_win.GetClassName())"
     export PATH=/usr/lib64/openmpi/bin:${PATH}
     export OMPI_FC=/opt/rh/gcc-toolset-13/root/usr/bin/gfortran
 

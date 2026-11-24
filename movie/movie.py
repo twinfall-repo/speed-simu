@@ -108,6 +108,25 @@ def scene(scene_dir, size):
     return plotter
 
 
+def railway(plotter, scene_dir, track, size):
+    """The galleries, tunnels and portals, the rails and the overhead line, on the scene."""
+    concrete, openings, tunnels = galleries.build(track)
+    plotter.add_mesh(galleries.rails(track), color="#6b6660", specular=0.6, ambient=0.35, diffuse=0.7)
+    terrain = plotter.meshes[0]  # the orthophoto's uv is affine in x, y: the tunnels take it too
+    xy1 = lambda points: np.column_stack([points[:, :2], np.ones(len(points))])
+    affine = np.linalg.lstsq(xy1(terrain.points), terrain.point_data["uv"], rcond=None)[0]
+    tunnels.point_data["uv"] = xy1(tunnels.points) @ affine
+    tunnels.active_texture_coordinates = tunnels.point_data["uv"]
+    photo = pv.read_texture(scene_dir / "orthophoto_0.5m.png")
+    photo.interpolate = True
+    plotter.add_mesh(tunnels, texture=photo, ambient=0.35, diffuse=0.7)
+    plotter.add_mesh(concrete, color="#a29e94", ambient=0.35, diffuse=0.7)
+    plotter.add_mesh(openings, color="#151515", ambient=0.35, diffuse=0.7)
+    masts, wires = catenary.build(track)
+    plotter.add_mesh(masts, color="#8a8f94", ambient=0.35, diffuse=0.7)
+    plotter.add_mesh(wires, color="#3a3a3a", line_width=size[0] / 960)  # a pixel wide in low, two in high
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 3 or argv[2] not in QUALITY:
@@ -127,21 +146,7 @@ def main(argv=None):
           f"s {S_IN:g} to the end", flush=True)
 
     plotter = scene(scene_dir, size)
-    concrete, openings, tunnels = galleries.build(track)
-    plotter.add_mesh(galleries.rails(track), color="#6b6660", specular=0.6, ambient=0.35, diffuse=0.7)
-    terrain = plotter.meshes[0]  # the orthophoto's uv is affine in x, y: the tunnels take it too
-    xy1 = lambda points: np.column_stack([points[:, :2], np.ones(len(points))])
-    affine = np.linalg.lstsq(xy1(terrain.points), terrain.point_data["uv"], rcond=None)[0]
-    tunnels.point_data["uv"] = xy1(tunnels.points) @ affine
-    tunnels.active_texture_coordinates = tunnels.point_data["uv"]
-    photo = pv.read_texture(scene_dir / "orthophoto_0.5m.png")
-    photo.interpolate = True
-    plotter.add_mesh(tunnels, texture=photo, ambient=0.35, diffuse=0.7)
-    plotter.add_mesh(concrete, color="#a29e94", ambient=0.35, diffuse=0.7)
-    plotter.add_mesh(openings, color="#151515", ambient=0.35, diffuse=0.7)
-    masts, wires = catenary.build(track)
-    plotter.add_mesh(masts, color="#8a8f94", ambient=0.35, diffuse=0.7)
-    plotter.add_mesh(wires, color="#3a3a3a", line_width=size[0] / 960)  # a pixel wide in low, two in high
+    railway(plotter, scene_dir, track, size)
     cars, texture = build()
     train = place(cars, path, s, heads[0])
     plotter.add_mesh(train, texture=texture, ambient=0.35, diffuse=0.7)
