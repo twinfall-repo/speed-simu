@@ -6,18 +6,14 @@ From: rockylinux:9
 # time in /opt/speed. The cases, the meshes and the run script do NOT live in
 # the image -- the repository is bind-mounted at /workspace when the container
 # runs (see apptainer/shell.sh), so a new case or a new mesh needs no rebuild.
-# Only a new version of SPEED, or of a patch, does.
+# Only a new version of SPEED does.
 #
-# apptainer/patches/*.f90 replace the files of the same name in SPEED before
-# compiling. WRITE_VTU_TIMEDATA.f90 writes the VTKWRITE output in the format
-# named on its line of SPEED.input: VTKWRITE T 100 XDMF (XDMF plus raw binary,
-# the default), VTUBINARY or VTUASCII (the original .vtu), and NOSTRAIN after
-# it for the displacement only. The original SPEED ignores these words.
-# MAKE_SPX_CON.f90 takes a face as shared by two elements only when they share
-# its 4 corners, not 3: at the tip of a crack of dtm_voxelization two elements
-# share 3 corners of a face and not the 4th, and the original copied the whole
-# face across, corrupted the connectivity and looped for ever after "Making
-# Spectral connectivity".
+# SPEED's master has, since 2026-11-24, the three fixes once kept here as
+# file overrides (bitbucket PRs #5, #6, #7): VTKWRITE T 100 XDMF (XDMF plus
+# raw binary, the default), VTUBINARY or VTUASCII, and NOSTRAIN after it for
+# the displacement only; a face shared by two elements only when they share
+# its 4 corners (the crack tips of dtm_voxelization); nodal strain, stress and
+# rotation averaged over all the elements at partition borders.
 # Rocky 9, as the cluster: OpenMPI 4.1.1 with PMIx 3, UCX, libfabric and
 # psm2 are the cluster's own packages, so the network stack matches its nodes.
 # SPEED is compiled with gfortran 13 of gcc-toolset-13 (OMPI_FC), not the
@@ -26,15 +22,10 @@ From: rockylinux:9
 # of a run to gather the monitored points into one text file each.
 # ssh is there for mpirun to start orted on the other nodes of a job, inside
 # this same image (see SPEED_LAUNCH_AGENT in apptainer/shell.sh).
-# The %files paths are relative to the folder of the build: build.sh runs it
-# from apptainer/.
 
 %labels
     Name speed-simu
     Description SPEED spectral elements code, compiled in the image
-
-%files
-    patches /opt/speed-patches
 
 %environment
     export SPEED_FOLDER=/opt/speed
@@ -66,16 +57,7 @@ From: rockylinux:9
     git -C ${SPEED_FOLDER} log -1 --format='%H %ad %s' --date=short > /opt/speed-commit.txt
     echo "compiler: $(mpif90 --version | head -n 1)" >> /opt/speed-commit.txt
 
-    for patch in /opt/speed-patches/*.f90; do
-        name=$(basename "${patch}")
-        if [ ! -f "${SPEED_FOLDER}/${name}" ]; then
-            echo "patch ${name} replaces no file of SPEED" >&2
-            exit 1
-        fi
-        cp "${patch}" "${SPEED_FOLDER}/${name}"
-        echo "patched: ${name} sha256 $(sha256sum "${patch}" | cut -c1-16)" >> /opt/speed-commit.txt
-    done
-    echo "SPEED commit and patches:"
+    echo "SPEED commit:"
     cat /opt/speed-commit.txt
 
     # the Makefile points METIS at homebrew and leaves OPT_FLAGS undefined,
@@ -114,4 +96,4 @@ From: rockylinux:9
         source apptainer/shell.sh -- bash run_case.sh -n 4 cases/rialba_source
         apptainer/submit.sh -- bash run_case.sh cases/rialba_source # PBS job
 
-    Built SPEED commit and patches: /opt/speed-commit.txt
+    Built SPEED commit: /opt/speed-commit.txt
