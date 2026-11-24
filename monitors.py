@@ -37,9 +37,9 @@ def main(argv=None):
     run = Path(argv[0])
     monitor = run / "MONITOR"
     points = [line.split() for line in (run / "LS.input").read_text().splitlines()[1:] if line.strip()]
-    infos = sorted(monitor.glob("MONITOR*.INFO"))
+    infos = sorted(monitor.glob("MONITOR[0-9]*.INFO"))  # not MONITOR.INFO, the run's own header
     if not infos:
-        raise SystemExit(f"no MONITOR*.INFO in {monitor}: did SPEED run with MLST in SPEED.input?")
+        raise SystemExit(f"no MONITOR<rank>.INFO in {monitor}: did SPEED run with MLST in SPEED.input?")
 
     series = {}  # point number -> {name: (columns, values (nt, ncomp))}
     times = None
