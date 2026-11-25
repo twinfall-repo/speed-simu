@@ -19,6 +19,9 @@ case (output/rialba), as for movie.py.
   surface points, and none (transparent) farther than REACH m from all of
   them. A diverging colour map, transparent around zero and opaque towards
   +-the CLIP percentile of |value| over the run, over the orthophoto.
+- The camera: abreast of the head of the train, out over the lake, for
+  FOLLOW s of simulated time, then over EASE s out to CAMERA, the towers and
+  the loads' stretch, to the end.
 - The plot: that component at the points MONITORS of LS.input (the towers),
   with a cursor at the frame's time; the same colours mark them in the view.
 
@@ -55,6 +58,7 @@ NEIGHBOURS, REACH = 4, 50.0  # surface points averaged per terrain point; m beyo
 CLIP = 99.5  # the colour scale's end: this percentile of |value| over the run
 PLOT = 0.28  # the plot's share of the frame's height
 CAMERA = ((-1080.0, -860.0, 120.0), (-220.0, 90.0, -95.0))  # camera, focal point: the towers and the loads' stretch
+FOLLOW, EASE = 4.0, 3.0  # s of simulated time: the camera follows the train's head, then eases out to CAMERA
 COLOURS = ("#e41a1c", "#ff7f00", "#4daf4a", "#984ea3", "#377eb8")
 T0 = time.perf_counter()
 
@@ -85,6 +89,27 @@ def train_timing(run, s, path):
         f"{pairs[:, 0].max():.0f} m, head at s {s0:.1f} m at t = 0, {abs(speed) * 3.6:.1f} km/h towards "
         f"{'growing' if speed > 0 else 'decreasing'} s (misfit {misfit:.1f} m)")
     return s0, speed
+
+
+def follow(path, s, head_s, direction):
+    """Camera and focal point abreast of the head of the train, out over the
+    lake, a little ahead of it, as movie.py's follow; head_s the head's arc
+    length along the railway, direction +-1 the way the train runs along s."""
+    k = np.searchsorted(s, head_s)
+    ahead = direction * (path[min(k + 10, len(s) - 1)] - path[max(k - 10, 0)])
+    ahead[2] = 0
+    ahead /= np.linalg.norm(ahead)
+    lake = -direction * np.cross(ahead, [0, 0, 1])  # the lake lies left of the railway's increasing s
+    front = np.array([np.interp(head_s - 15 * direction, s, path[:, i]) for i in range(3)])
+    return front + 50 * ahead + 70 * lake + [0, 0, 22], front + [0, 0, 4]
+
+
+def camera(path, s, head_s, direction, t):
+    """follow() up to FOLLOW s, a smoothstep to CAMERA over the next EASE s."""
+    cam, focal = follow(path, s, head_s, direction)
+    a = np.clip((t - FOLLOW) / EASE, 0, 1)
+    a = a * a * (3 - 2 * a)
+    return (1 - a) * cam + a * np.array(CAMERA[0]), (1 - a) * focal + a * np.array(CAMERA[1])
 
 
 def monitors(run):
@@ -124,6 +149,8 @@ def main(argv=None):
     track = np.loadtxt(scene_dir / "railway.csv")
     s, path = track[:, 0], track[:, 1:4]
     s0, speed = train_timing(run, s, path)
+    log(f"camera: follows the head for t < {FOLLOW:g} s (s {s0:.0f} to {s0 + speed * FOLLOW:.0f} m), "
+        f"eases out to {CAMERA} by t {FOLLOW + EASE:g} s")
     if speed < 0:  # place() puts the cars behind the head towards smaller s: run along the reversed track
         s_run, path_run, head = s[-1] - s[::-1], path[::-1], lambda t: s[-1] - (s0 + speed * t)
     else:
@@ -171,8 +198,6 @@ def main(argv=None):
     for p, c in zip(MONITORS, COLOURS):
         plotter.add_mesh(pv.Sphere(radius=4.0, center=where[p]), color=c, ambient=0.6)
     stamp = plotter.add_text("", position=(12, view_h - 30), font_size=12, color="white")
-    plotter.camera_position = [CAMERA[0], CAMERA[1], (0, 0, 1)]
-    plotter.camera.clipping_range = (1.0, 12000.0)
 
     fig, ax = plt.subplots(figsize=(width / 100, plot_h / 100), dpi=100)
     for (p, (t, v)), c in zip(series.items(), COLOURS):
@@ -192,6 +217,9 @@ def main(argv=None):
         a = (t - times[k]) / (times[k + 1] - times[k])
         overlay[LABEL] = (1 - a) * field(steps[k]) + a * field(steps[k + 1])
         train.points = place(cars, path_run, s_run, head(t)).points
+        cam, focal = camera(path, s, s0 + speed * t, np.sign(speed), t)
+        plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
+        plotter.camera.clipping_range = (1.0, 12000.0)
         stamp.SetInput(f"t = {t:5.2f} s   train at {abs(speed) * 3.6:.0f} km/h   {LABEL} of the displacement")
         plotter.render()
         view = plotter.screenshot(return_img=True)
@@ -201,7 +229,7 @@ def main(argv=None):
         Image.fromarray(np.vstack([view[:, :, :3], plot])).save(frames_dir / f"frame_{n:05d}.png")
         if only or n % 50 == 0:
             log(f"  frame {n}/{len(frame_t)}: t {t:.2f} s (snapshots {steps[k]}-{steps[k + 1]}), "
-                f"head at s {s0 + speed * t:.0f} m")
+                f"head at s {s0 + speed * t:.0f} m, camera {cam.round(0)} -> {focal.round(0)}")
     plotter.close()
     if only:
         return
