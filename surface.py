@@ -163,16 +163,31 @@ def frame(xyz):
 
 
 def snapshots(vtk):
-    """(step, time) of the snapshots, from the grids of SPEED.xmf."""
-    snaps = []
+    """(step, time) of the snapshots, from the grids of SPEED.xmf. A run killed
+    while writing (the walltime) leaves its last snapshots short or missing:
+    those, from the first whose files are not the size of the first
+    snapshot's, are dropped."""
+    snaps, files = [], []
     for grid in (vtk / "SPEED.xmf").read_text().split("<Grid Name=\"mesh\"")[1:]:
         t = re.search(r'<Time Value="([^"]+)"', grid)
-        step = re.search(r"(?:Disp|Vel|VelVV)_(\d+)\.bin", grid)
-        if not (t and step):
+        names = re.findall(r"((?:Disp|Vel|VelVV)_(\d+)\.bin)", grid)
+        if not (t and names):
             raise SystemExit(f"{vtk / 'SPEED.xmf'}: a snapshot without a time or a Disp, Vel, VelVV file")
-        snaps.append((int(step.group(1)), float(t.group(1))))
+        snaps.append((int(names[0][1]), float(t.group(1))))
+        files.append([name for name, _ in names])
     if not snaps:
         raise SystemExit(f"{vtk / 'SPEED.xmf'}: no snapshot")
+    size = lambda name: (vtk / name).stat().st_size if (vtk / name).exists() else -1
+    whole = [size(name) for name in files[0]]
+    for k, names in enumerate(files):
+        sizes = [size(name) for name in names]
+        if sizes != whole:
+            log(f"{vtk / 'SPEED.xmf'}: snapshot {k + 1}/{len(snaps)} (step {snaps[k][0]}, t {snaps[k][1]:g} s) "
+                f"has {dict(zip(names, sizes))} bytes, not {whole} (-1: missing): the run was cut short, "
+                f"keeping the {k} snapshots before it, to t {snaps[k - 1][1] if k else 0:g} s")
+            if k == 0:
+                raise SystemExit(f"{vtk / 'SPEED.xmf'}: no whole snapshot")
+            return snaps[:k]
     return snaps
 
 

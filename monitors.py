@@ -52,16 +52,15 @@ def main(argv=None):
             path = info.with_suffix(suffix)
             if not path.exists():
                 continue
-            if path.stat().st_size % 8:
-                raise SystemExit(f"{path}: {path.stat().st_size} bytes, not whole float64 values")
-            raw = np.fromfile(path, dtype="<f8")
+            raw = np.fromfile(path, dtype="<f8", count=path.stat().st_size // 8)
             width = 1 + len(components) * count
-            if raw.size == 0:
-                raise SystemExit(f"{path}: empty")
-            if raw.size % width:
-                raise SystemExit(f"{path}: {raw.size} values, not a multiple of {width} "
+            if raw.size < width:
+                raise SystemExit(f"{path}: {path.stat().st_size} bytes, not one whole time "
                                  f"(time and {len(components)} x {count} points)")
-            rows = raw.reshape(-1, width)
+            if path.stat().st_size % (8 * width):  # a run killed while writing (the walltime)
+                print(f"{path}: {path.stat().st_size} bytes, not whole times of {width} float64: "
+                      f"the run was cut short, keeping the first {raw.size // width} times", flush=True)
+            rows = raw[:raw.size // width * width].reshape(-1, width)
             if times is None or len(rows[:, 0]) > len(times):
                 times = rows[:, 0]
             for k, number in enumerate(held):
