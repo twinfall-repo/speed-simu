@@ -11,7 +11,7 @@ the load files they name). SCENE_DIR is dtm_voxelization's output of the
 case (output/rialba), as for movie.py.
 
 - The train: the first axle reaches each load at the first time its load
-  function is not zero; a line through those (arc length, time) pairs gives
+  function reaches half its peak (the tapered loads at the ends left out); a line through those (arc length, time) pairs gives
   the head's arc length in time, and the direction it runs.
 - The field: the component COMPONENT of the displacement, from the free
   surface of the voxel mesh to the terrain of the orthophoto (every 2 m):
@@ -76,16 +76,19 @@ def train_timing(run, s, path):
     funcs = {int(n): f for n, f in re.findall(r"^\s*FUNC\s+(\d+)\s+3\s+\d+\s+'([^']+)'", text, re.M)}
     if not funcs:
         raise SystemExit(f"{mate}: no FUNC ... 3 with a load file: not a run with TTB2SPEED loads")
-    pairs = []
+    # an axle is over a load when the load first reaches half its peak: the
+    # load files may be non-zero, if tiny, long before (the tails of TTB-2D's
+    # loads); the tapered loads at the ends, peaks below a tenth of the median, are left out
+    peaks, arrivals = {}, {}
     for n, name in funcs.items():
         f = np.loadtxt(run / name, skiprows=1)
-        on = np.flatnonzero(np.abs(f[:, 1]) > 1e-6 * np.abs(f[:, 1]).max())
-        k = np.argmin(np.linalg.norm(path - ploz[n], axis=1))
-        pairs.append((s[k], f[on[0], 0]))
-    pairs = np.array(pairs)
+        peaks[n] = np.abs(f[:, 1]).max()
+        arrivals[n] = f[np.argmax(np.abs(f[:, 1]) >= 0.5 * peaks[n]), 0]
+    keep = [n for n in funcs if peaks[n] >= 0.1 * np.median(list(peaks.values()))]
+    pairs = np.array([(s[np.argmin(np.linalg.norm(path - ploz[n], axis=1))], arrivals[n]) for n in keep])
     speed, s0 = np.polyfit(pairs[:, 1], pairs[:, 0], 1)
     misfit = np.abs(pairs[:, 0] - (s0 + speed * pairs[:, 1])).max()
-    log(f"train from {len(pairs)} loads of {mate.name}: loads over s {pairs[:, 0].min():.0f} to "
+    log(f"train from {len(pairs)} loads of {mate.name} ({len(funcs) - len(keep)} tapered left out): loads over s {pairs[:, 0].min():.0f} to "
         f"{pairs[:, 0].max():.0f} m, head at s {s0:.1f} m at t = 0, {abs(speed) * 3.6:.1f} km/h towards "
         f"{'growing' if speed > 0 else 'decreasing'} s (misfit {misfit:.1f} m)")
     return s0, speed
