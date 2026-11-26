@@ -20,8 +20,10 @@ case (output/rialba), as for movie.py.
   them. A diverging colour map, transparent around zero and opaque towards
   +-the CLIP percentile of |value| over the run, over the orthophoto.
 - The camera: abreast of the head of the train, out over the lake, for
-  FOLLOW s of simulated time, then over EASE s out to CAMERA, the towers and
-  the loads' stretch, to the end.
+  FOLLOW s of simulated time; a little farther back (FAR of the way to
+  CAMERA) to HOLD s; then over EASE s out to CAMERA, the towers and the
+  loads' stretch, to the end. Its path is smoothed over SMOOTH s.
+- The labels: matplotlib's Computer Modern and mathtext, as LaTeX, FONT pt at 1920 wide.
 - The plot: that component at the points MONITORS of LS.input (the towers),
   with a cursor at the frame's time; the same colours mark them in the view.
 
@@ -39,10 +41,12 @@ from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.patheffects as effects
 import matplotlib.pyplot as plt
 import numpy as np
 import pyvista as pv
 from PIL import Image
+from scipy.ndimage import gaussian_filter1d
 from scipy.spatial import cKDTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -58,7 +62,11 @@ NEIGHBOURS, REACH = 4, 50.0  # surface points averaged per terrain point; m beyo
 CLIP = 99.5  # the colour scale's end: this percentile of |value| over the run
 PLOT = 0.28  # the plot's share of the frame's height
 CAMERA = ((-1080.0, -860.0, 120.0), (-220.0, 90.0, -95.0))  # camera, focal point: the towers and the loads' stretch
-FOLLOW, EASE = 4.0, 3.0  # s of simulated time: the camera follows the train's head, then eases out to CAMERA
+# s of simulated time: the camera follows the head of the train up to FOLLOW, eases back over 1 s to a
+# farther view, FAR of the way to CAMERA, holds it to HOLD, then eases out to CAMERA over EASE
+FOLLOW, FAR, HOLD, EASE = 3.0, 0.075, 6.0, 3.0
+SMOOTH = 0.5  # s, the camera's path is smoothed in time over this (a Gaussian's sigma): no jitter from the track's points
+FONT = 18  # pt of the labels at 1920 wide, scaled with the width; Computer Modern, as LaTeX
 COLOURS = ("#e41a1c", "#ff7f00", "#4daf4a", "#984ea3", "#377eb8")
 T0 = time.perf_counter()
 
@@ -98,20 +106,22 @@ def follow(path, s, head_s, direction):
     """Camera and focal point abreast of the head of the train, out over the
     lake, a little ahead of it, as movie.py's follow; head_s the head's arc
     length along the railway, direction +-1 the way the train runs along s."""
-    k = np.searchsorted(s, head_s)
-    ahead = direction * (path[min(k + 10, len(s) - 1)] - path[max(k - 10, 0)])
+    at = lambda arc: np.array([np.interp(arc, s, path[:, i]) for i in range(3)])
+    ahead = direction * (at(head_s + 20) - at(head_s - 20))
     ahead[2] = 0
     ahead /= np.linalg.norm(ahead)
     lake = -direction * np.cross(ahead, [0, 0, 1])  # the lake lies left of the railway's increasing s
-    front = np.array([np.interp(head_s - 15 * direction, s, path[:, i]) for i in range(3)])
+    front = at(head_s - 15 * direction)
     return front + 50 * ahead + 70 * lake + [0, 0, 22], front + [0, 0, 4]
 
 
-def camera(path, s, head_s, direction, t):
-    """follow() up to FOLLOW s, a smoothstep to CAMERA over the next EASE s."""
-    cam, focal = follow(path, s, head_s, direction)
-    a = np.clip((t - FOLLOW) / EASE, 0, 1)
-    a = a * a * (3 - 2 * a)
+def cameras(path, s, s0, speed, frame_t, per_second):
+    """Camera and focal point at every frame: follow() smoothed in time, eased
+    to FAR of the way to CAMERA after FOLLOW, then out to CAMERA after HOLD."""
+    cam, focal = (gaussian_filter1d(np.array(v), SMOOTH * per_second, axis=0, mode="nearest")
+                  for v in zip(*(follow(path, s, s0 + speed * t, np.sign(speed)) for t in frame_t)))
+    smooth = lambda a, b: (lambda x: x * x * (3 - 2 * x))(np.clip((frame_t - a) / (b - a), 0, 1))[:, None]
+    a = FAR * smooth(FOLLOW, FOLLOW + 1) + (1 - FAR) * smooth(HOLD, HOLD + EASE)
     return (1 - a) * cam + a * np.array(CAMERA[0]), (1 - a) * focal + a * np.array(CAMERA[1])
 
 
@@ -152,8 +162,9 @@ def main(argv=None):
     track = np.loadtxt(scene_dir / "railway.csv")
     s, path = track[:, 0], track[:, 1:4]
     s0, speed = train_timing(run, s, path)
-    log(f"camera: follows the head for t < {FOLLOW:g} s (s {s0:.0f} to {s0 + speed * FOLLOW:.0f} m), "
-        f"eases out to {CAMERA} by t {FOLLOW + EASE:g} s")
+    log(f"camera: follows the head to t {FOLLOW:g} s (s {s0:.0f} to {s0 + speed * FOLLOW:.0f} m), smoothed over "
+        f"{SMOOTH:g} s; {FAR:g} of the way to {CAMERA} from t {FOLLOW + 1:g} to {HOLD:g} s; all the way by t {HOLD + EASE:g} s")
+    cams, focals = cameras(path, s, s0, speed, frame_t, fps * SLOW)
     if speed < 0:  # place() puts the cars behind the head towards smaller s: run along the reversed track
         s_run, path_run, head = s[-1] - s[::-1], path[::-1], lambda t: s[-1] - (s0 + speed * t)
     else:
@@ -189,10 +200,7 @@ def main(argv=None):
     rgba[:, 3] = np.minimum(1, np.abs(np.linspace(-1, 1, 256)) * 1.6) * 0.85 * 255  # clear at zero
     lut.values = rgba
     lut.nan_opacity = 0.0
-    plotter.add_mesh(overlay, scalars=LABEL, cmap=lut, clim=(-clip, clip), ambient=0.6, diffuse=0.4, show_scalar_bar=True,
-                     scalar_bar_args=dict(title=f"{LABEL} (m)", fmt="%.1e", position_x=0.6, position_y=0.86,
-                                          width=0.33, height=0.06, title_font_size=14, label_font_size=12,
-                                          color="white"))
+    plotter.add_mesh(overlay, scalars=LABEL, cmap=lut, clim=(-clip, clip), ambient=0.6, diffuse=0.4, show_scalar_bar=False)
     railway(plotter, scene_dir, track, (width, view_h))
     cars, texture = build()
     train = place(cars, path_run, s_run, head(0))
@@ -200,19 +208,42 @@ def main(argv=None):
     series, where = monitors(run)
     for p, c in zip(MONITORS, COLOURS):
         plotter.add_mesh(pv.Sphere(radius=4.0, center=where[p]), color=c, ambient=0.6)
-    stamp = plotter.add_text("", position=(12, view_h - 30), font_size=12, color="white")
 
-    fig, ax = plt.subplots(figsize=(width / 100, plot_h / 100), dpi=100)
+    # the frame, all in matplotlib: the view, its time and colour bar over it, the plot below
+    fs = FONT * width / 1920
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["cmr10"], "mathtext.fontset": "cm",
+                         "axes.formatter.use_mathtext": True, "axes.unicode_minus": False,
+                         "font.size": fs, "axes.labelsize": fs, "xtick.labelsize": 0.85 * fs,
+                         "ytick.labelsize": 0.85 * fs, "legend.fontsize": 0.85 * fs})
+    symbol = f"${LABEL}$"
+    fig = plt.figure(figsize=(width / 100, height / 100), dpi=100)
+    ax_view = fig.add_axes((0, plot_h / height, 1, view_h / height))
+    ax_view.set_axis_off()
+    image = ax_view.imshow(np.zeros((view_h, width, 3), np.uint8), aspect="auto", interpolation="none")
+    halo = [effects.withStroke(linewidth=0.12 * fs, foreground="black")]
+    stamp = ax_view.text(0.012, 0.95, "", transform=ax_view.transAxes, va="top", color="white",
+                         fontsize=1.2 * fs, path_effects=halo)
+    bar_ax = ax_view.inset_axes((0.62, 0.86, 0.34, 0.04))
+    bar = fig.colorbar(plt.cm.ScalarMappable(plt.Normalize(-clip, clip), "RdBu_r"), cax=bar_ax,
+                       orientation="horizontal")
+    bar.formatter.set_powerlimits((0, 0))
+    bar.ax.xaxis.set_tick_params(color="white", labelcolor="white")
+    bar.ax.xaxis.get_offset_text().set(color="white", path_effects=halo)
+    for label in bar.ax.get_xticklabels():
+        label.set_path_effects(halo)
+    bar.set_label(f"{symbol} (m)", color="white", path_effects=halo)
+    bar.ax.xaxis.set_label_position("top")
+    left, bottom, top = 5.5 * fs, 3.0 * fs, 1.8 * fs  # px round the plot: tick labels, axis labels, the 1e-6 above
+    ax = fig.add_axes((left / width, bottom / height, 1 - 1.4 * left / width, (plot_h - bottom - top) / height))
     for (p, (t, v)), c in zip(series.items(), COLOURS):
-        ax.plot(t, v, color=c, lw=1.2, label=f"tower point {p}")
-    cursor = ax.axvline(0, color="k", lw=1)
+        ax.plot(t, v, color=c, lw=1.5, label=f"point {p}")
+    cursor = ax.axvline(0, color="k", lw=1.2)
     ax.set_xlim(0, times[-1])
-    ax.set_xlabel("t (s)")
-    ax.set_ylabel(f"{LABEL} (m)")
+    ax.set_xlabel("$t$ (s)", labelpad=1)
+    ax.set_ylabel(f"{symbol} (m)")
     ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
-    ax.legend(loc="upper right", ncol=len(MONITORS), fontsize=7, frameon=False)
+    ax.legend(loc="upper right", ncol=len(MONITORS), framealpha=0.85, edgecolor="none")
     ax.grid(alpha=0.3)
-    fig.tight_layout(pad=0.4)
 
     for n in only or range(len(frame_t)):
         t = frame_t[n]
@@ -220,16 +251,15 @@ def main(argv=None):
         a = (t - times[k]) / (times[k + 1] - times[k])
         overlay[LABEL] = (1 - a) * field(steps[k]) + a * field(steps[k + 1])
         train.points = place(cars, path_run, s_run, head(t)).points
-        cam, focal = camera(path, s, s0 + speed * t, np.sign(speed), t)
+        cam, focal = cams[n], focals[n]
         plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
         plotter.camera.clipping_range = (1.0, 12000.0)
-        stamp.SetInput(f"t = {t:5.2f} s   train at {abs(speed) * 3.6:.0f} km/h   {LABEL} of the displacement")
         plotter.render()
-        view = plotter.screenshot(return_img=True)
+        image.set_data(plotter.screenshot(return_img=True)[:, :, :3])
+        stamp.set_text(f"$t = {t:.2f}$ s,  train at {abs(speed) * 3.6:.0f} km/h,  {symbol} of the displacement")
         cursor.set_xdata([t, t])
         fig.canvas.draw()
-        plot = np.asarray(fig.canvas.buffer_rgba())[..., :3]
-        Image.fromarray(np.vstack([view[:, :, :3], plot])).save(frames_dir / f"frame_{n:05d}.png")
+        Image.fromarray(np.asarray(fig.canvas.buffer_rgba())[..., :3]).save(frames_dir / f"frame_{n:05d}.png")
         if only or n % 50 == 0:
             log(f"  frame {n}/{len(frame_t)}: t {t:.2f} s (snapshots {steps[k]}-{steps[k + 1]}), "
                 f"head at s {s0 + speed * t:.0f} m, camera {cam.round(0)} -> {focal.round(0)}")

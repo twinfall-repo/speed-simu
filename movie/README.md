@@ -125,7 +125,8 @@ points: far from the towers the 42 m cells stand up to ~20 m off the DTM.
 The colours are clear around zero, opaque towards the 99.5 percentile of
 |u_x| over the run. The movie runs 2x slower than the simulation (`SLOW`),
 the field interpolated between snapshots. Constants at the top of the
-script: `COMPONENT`, `MONITORS`, `CAMERA`, `SLOW`, `CLIP`.
+script: `COMPONENT`, `MONITORS`, `CAMERA`, `SLOW`, `CLIP`; the shots
+`FOLLOW`, `FAR`, `HOLD`, `EASE`, `SMOOTH`; `FONT` of the labels.
 
 The solution is too heavy to bring home: render on the cluster, with the
 SPEED image (pyvista, matplotlib and ffmpeg are in it, off screen through
@@ -135,6 +136,14 @@ Mesa's software EGL), the scene copied there once:
 scp -r dtm_voxelization/output/rialba/{orthophoto_0.5m.*,lake*,backdrop*,railway.csv} CLUSTER:SCENE_DIR/
 SPEED_NODES=1 SPEED_WALLTIME=04:00:00 apptainer/submit_slurm.sh -- \
     python3 movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR high
+```
+
+Or at the end of the run itself, after `surface.py`: with `SPEED_MOVIE` the
+scene folder, relative to the repository, `run_case.sh` writes
+`RUN_DIR/movie/speed_high.mp4` (log in `movie.log`):
+
+```bash
+SPEED_MOVIE=scene SPEED_NODES=20 apptainer/submit_slurm.sh -- bash run_case.sh cases/rialba_ttb_nb
 ```
 
 ## Still to do

@@ -43,6 +43,7 @@
 # SPEED_THREADS (default 1) is the OpenMP threads of each MPI process.
 # The format of the VTKWRITE output is on its line of SPEED.input, e.g.
 # VTKWRITE T 100 XDMF NOSTRAIN VELOCITY VELVV (see apptainer/speed.def).
+# SPEED_MOVIE, a scene folder (see movie/README.md), makes the movie too, in movie/.
 
 set -euo pipefail
 
@@ -273,6 +274,23 @@ if [ -f VTKOUT/SPEED.xmf ]; then
     else
         echo "surface:   FAILED, last lines of surface.log:" | tee -a run_info.txt >&2
         tail -n 5 surface.log | tee -a run_info.txt >&2
+    fi
+fi
+
+# the movie of movie/speed_movie.py, only when SPEED_MOVIE names the scene
+# (relative to the repository); its log is movie.log
+if [ -n "${SPEED_MOVIE:-}" ]; then
+    scene="${SPEED_MOVIE}"
+    [[ "${scene}" = /* ]] || scene="${here}/${scene}"
+    started=$(date +%s)
+    if [ -d surface ] && python3 "${here}/movie/speed_movie.py" "${run_dir}" "${scene}" "${run_dir}/movie" high > movie.log 2>&1; then
+        echo "movie:     ${run_dir}/movie/speed_high.mp4 ($(du -h movie/speed_high.mp4 | cut -f1)," \
+            "$(( $(date +%s) - started ))s), scene ${scene}" | tee -a run_info.txt
+        rm -r movie/frames
+    else
+        echo "movie:     FAILED (scene ${scene}, surface/ $([ -d surface ] && echo there || echo missing))," \
+            "last lines of movie.log:" | tee -a run_info.txt >&2
+        tail -n 5 movie.log 2>/dev/null | tee -a run_info.txt >&2
     fi
 fi
 

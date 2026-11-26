@@ -21,6 +21,8 @@
 #                   folder of dtm_voxelization, to run on the meshes it writes
 #   SPEED_NP        MPI processes of run_case.sh, when it is not given -n
 #   SPEED_THREADS   OpenMP threads of each MPI process (default 1)
+#   SPEED_MOVIE     scene folder, relative to the repository: run_case.sh then
+#                   also makes the movie of movie/speed_movie.py (high)
 #
 # In a PBS or SLURM job, the container gets the job's nodes (SPEED_HOSTS) and
 # the command that starts orted in this image on the other nodes
@@ -120,6 +122,7 @@ speed_shell() {
     [ -n "${SLURM_JOB_ID:-}" ] && isolation+=(--env "SLURM_JOB_ID=${SLURM_JOB_ID}")
     [ -n "${SPEED_NP:-}" ] && isolation+=(--env "SPEED_NP=${SPEED_NP}")
     isolation+=(--env "SPEED_THREADS=${SPEED_THREADS:-1}")
+    [ -n "${SPEED_MOVIE:-}" ] && isolation+=(--env "SPEED_MOVIE=${SPEED_MOVIE}")
     echo "processes: ${SPEED_NP:-unset}, threads per process: ${SPEED_THREADS:-1}"
 
     # In a PBS or SLURM job, the nodes as host:slots, for mpirun in the
