@@ -286,7 +286,7 @@ def main(argv=None):
     overlay = terrain.subdivide(REFINE, "linear") if REFINE else terrain.copy()
     overlay.point_data.clear()
     walls = np.abs(overlay.cell_normals[:, 2]) < 0.05  # the DTM's skirt round the domain, not the cliffs
-    overlay = overlay.extract_cells(~walls).extract_surface(algorithm="dataset_surface")
+    overlay = overlay.extract_cells(~walls).extract_surface()
     log(f"overlay: the terrain refined {REFINE} times, {overlay.n_points:,} points, {walls.sum():,} wall triangles left out")
     nodes, weights, found = locate(overlay.points, xyz, quads)
     overlay.points[:, 2] += 0.5  # just above the photo
