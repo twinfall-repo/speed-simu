@@ -16,15 +16,20 @@ case (output/rialba), as for movie.py.
   function reaches half its peak (the tapered loads at the ends left out); a line through those (arc length, time) pairs gives
   the head's arc length in time, and the direction it runs.
 - The field: the component of FIELD, from the free surface of the voxel
-  mesh to the terrain of the orthophoto, refined REFINE times (2 m to 1 m
-  for 1): each terrain point takes the value interpolated in x and y on the
+  mesh to a raster on the terrain of the orthophoto, its 2 m lattice refined
+  to SAMPLE m: each node takes the value interpolated in x and y on the
   upward face of the surface over it, of several the closest in z: on the
   top of a voxel with SPEED's own biquadratic basis on its 3 x 3 nodes, on a
-  slanted face linearly. So the mesh's own resolution shows, 0.8 m
-  at the towers, 2.3 m around, 7 to 21 m far off. A diverging colour map,
-  linear up to +-the CLIP percentile of |value| over the run, clear at zero
-  and more opaque towards it; with log, signed log over DECADES decades up
-  to the decade nearest that percentile, clear below them.
+  slanted face linearly. Then a picture rather than a measurement: a
+  normalised Gaussian smoothing whose sigma is SMOOTHING times the element
+  size under each node (itself blurred over SEAM m), which rounds off the
+  corners between the elements and the steps between the columns where the
+  mesh is coarse and keeps the detail where it is fine (0.8 m nodes at the
+  towers, 2.3 m around, 7 to 21 m far off); then cubic to PIXEL m, drawn as
+  the RGBA texture of the terrain. A diverging colour map, linear up to
+  +-the CLIP percentile of |value| over the run, clear at zero and more
+  opaque towards it; with log, signed log over DECADES decades up to the
+  decade nearest that percentile, clear below them.
 - The camera: abreast of the head of the train, out over the lake, for
   FOLLOW s of simulated time; a little farther back (FAR of the way to
   CAMERA) to HOLD s; then over EASE s out to CAMERA, the towers and the
@@ -52,7 +57,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyvista as pv
 from PIL import Image
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter, gaussian_filter1d, zoom
 from scipy.spatial import cKDTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -64,10 +69,13 @@ QUALITY = {"low": ((960, 540), 12), "high": ((1920, 1080), 30)}
 SLOW = 2  # the movie runs this many times slower than the simulation
 FIELDS = {"Disp": ("u", "m", "displacement"), "Vel": ("v", "m/s", "velocity")}  # SPEED's name: symbol, unit, name
 MONITORS = (8, 9, 10, 11, 12)  # the towers' points in LS.input
-REFINE = 1  # times the terrain's triangles are split in four for the field: its 2 m to 1 m
+SAMPLE, PIXEL = 0.5, 0.25  # m: the raster on the terrain the field is taken on, and the one it is drawn at
 CANDIDATES = 24  # upward triangles of the surface, nearest by centre, tried for each terrain point
+CHUNK = 500_000  # terrain points located at a time: memory
 CLIP = 99.9  # the colour scale's end: this percentile of |value| over the run (log: the decade nearest it)
 DECADES = 3  # decades of the signed log colour scale (log) below its end
+SMOOTHING = 0.5  # the sigma of the field's smoothing, as a fraction of the element size under each point; 0: none
+SEAM = 10.0  # m, the sigma over which the element size is blurred first, so that the smoothing changes gradually
 PLOT = 0.28  # the plot's share of the frame's height
 CAMERA = ((-1080.0, -860.0, 120.0), (-220.0, 90.0, -95.0))  # camera, focal point: the towers and the loads' stretch
 # s of simulated time: the camera follows the head of the train up to FOLLOW, eases back over 1 s to a
@@ -133,17 +141,23 @@ def cameras(path, s, s0, speed, frame_t, per_second):
     return (1 - a) * cam + a * np.array(CAMERA[0]), (1 - a) * focal + a * np.array(CAMERA[1])
 
 
-def candidates(centres, points, test):
+def candidates(centres, points, test, width):
     """For each point, of the CANDIDATES items nearest by centre in x and y, the
-    one test(k) says it falls in, closest in z: (item, gap in z, its data)."""
-    _, cand = cKDTree(centres).query(points[:, :2], CANDIDATES)
-    best, gap, data = np.full(len(points), -1), np.full(len(points), np.inf), None
-    for j in range(CANDIDATES):
-        k = cand[:, j]
-        inside, z, extra = test(k)
-        better = inside & (np.abs(z - points[:, 2]) < gap)
-        best[better], gap[better] = k[better], np.abs(z - points[:, 2])[better]
-        data = extra if data is None else np.where(better[:, None], extra, data)
+    one test(k, rows) says it falls in, closest in z: (item, gap in z, its data,
+    width columns), CHUNK points at a time."""
+    tree = cKDTree(centres)
+    best, gap = np.full(len(points), -1), np.full(len(points), np.inf)
+    data = np.zeros((len(points), width))
+    for start in range(0, len(points), CHUNK):
+        rows = slice(start, start + CHUNK)
+        _, cand = tree.query(points[rows, :2], CANDIDATES)
+        b, g, d = best[rows], gap[rows], data[rows]  # views
+        for j in range(CANDIDATES):
+            k = cand[:, j]
+            inside, z, extra = test(k, rows)
+            dz = np.abs(z - points[rows, 2])
+            better = inside & (dz < g)
+            b[better], g[better], d[better] = k[better], dz[better], extra[better]
     return best, gap, data
 
 
@@ -178,11 +192,11 @@ def locate(points, xyz, quads):
         raise SystemExit("rectangular element faces whose nodes do not fill a 3 x 3 grid: not SPEED degree 2")
     ztop = p[:, 0, 2]
 
-    def in_flat(k):
-        xi = 2 * (points[:, :2] - lo[k]) / (hi[k] - lo[k]) - 1
+    def in_flat(k, rows):
+        xi = 2 * (points[rows, :2] - lo[k]) / (hi[k] - lo[k]) - 1
         return np.all(np.abs(xi) <= 1 + 1e-9, 1), ztop[k], xi
 
-    best, gap, xi = candidates((lo + hi) / 2, points, in_flat)
+    best, gap, xi = candidates((lo + hi) / 2, points, in_flat, 2)
     basis = lambda s: np.stack([s * (s - 1) / 2, 1 - s * s, s * (s + 1) / 2], -1)
     weights = (basis(xi[:, 0])[:, :, None] * basis(xi[:, 1])[:, None, :]).reshape(-1, 9)
     nodes = grid[np.maximum(best, 0)].reshape(-1, 9)
@@ -190,8 +204,8 @@ def locate(points, xyz, quads):
     tri = np.vstack([slanted.reshape(-1, 4)[:, [0, 1, 2]], slanted.reshape(-1, 4)[:, [0, 2, 3]]])
     ta, tb, tc = (xyz[tri[:, i]] for i in range(3))
 
-    def in_tri(k):
-        e1, e2, r = tb[k, :2] - ta[k, :2], tc[k, :2] - ta[k, :2], points[:, :2] - ta[k, :2]
+    def in_tri(k, rows):
+        e1, e2, r = tb[k, :2] - ta[k, :2], tc[k, :2] - ta[k, :2], points[rows, :2] - ta[k, :2]
         with np.errstate(divide="ignore", invalid="ignore"):
             det = e1[:, 0] * e2[:, 1] - e2[:, 0] * e1[:, 1]
             l1 = (r[:, 0] * e2[:, 1] - e2[:, 0] * r[:, 1]) / det
@@ -199,19 +213,63 @@ def locate(points, xyz, quads):
         l = np.column_stack([1 - l1 - l2, l1, l2])
         return l.min(1) >= -1e-9, (l * np.stack([ta[k, 2], tb[k, 2], tc[k, 2]], 1)).sum(1), l
 
-    t_best, t_gap, lam = candidates(((ta + tb + tc) / 3)[:, :2], points, in_tri)
+    t_best, t_gap, lam = candidates(((ta + tb + tc) / 3)[:, :2], points, in_tri, 3)
     use = (t_best >= 0) & (t_gap < gap)
     nodes[use] = np.column_stack([tri[t_best[use]], np.repeat(tri[t_best[use], :1], 6, 1)])
     weights[use] = np.column_stack([lam[use], np.zeros((use.sum(), 6))])
     found = (best >= 0) | (t_best >= 0)
     gap = np.where(use, t_gap, gap)
+    area = 0.5 * np.linalg.norm(np.cross(tb - ta, tc - ta), axis=1)
+    size = np.where(use, 2 * np.sqrt(2 * area[np.maximum(t_best, 0)]), (hi - lo).mean(1)[np.maximum(best, 0)])
+    size[~found] = np.median(size[found])
     log(f"field on {len(points):,} terrain points: {len(flat):,} horizontal element faces (biquadratic), "
         f"{len(slanted):,} slanted or not rectangles (linear, {(~rect).sum():,} horizontal), "
         f"{len(groups) - len(flat) - len(slanted):,} walls left out; "
         f"{(found & ~use).mean():.2%} of the points on a horizontal face, {use.mean():.2%} on a slanted one, "
         f"{(~found).sum():,} on none (left clear); terrain to face in z {np.median(gap[found]):.1f} m median, "
-        f"{np.percentile(gap[found], 99):.1f} m at 99%")
-    return nodes, weights, found
+        f"{np.percentile(gap[found], 99):.1f} m at 99%; element size under them {np.percentile(size, 5):.2f} to "
+        f"{np.percentile(size, 95):.1f} m (5 to 95%)")
+    return nodes, weights, found, size
+
+
+def blur(img, sigma):
+    """img smoothed by a Gaussian of sigma pixels; past 4 pixels on a copy
+    coarser by a power of 2, brought back linearly."""
+    if sigma <= 4:
+        return gaussian_filter(img, sigma, mode="nearest")
+    f = 2 ** int(np.log2(sigma / 2))
+    h, w = img.shape
+    pad = np.pad(img, ((0, -h % f), (0, -w % f)), mode="edge")
+    small = pad.reshape(pad.shape[0] // f, f, pad.shape[1] // f, f).mean((1, 3))
+    return zoom(gaussian_filter(small, sigma / f, mode="nearest"), f, order=1)[:h, :w]
+
+
+def smoother(size, found):
+    """smooth(v): v on the SAMPLE raster smoothed by a normalised Gaussian
+    whose sigma is SMOOTHING x the element size under each pixel: blurs at
+    sigmas a factor 2 apart, each pixel blending the two that bracket its own.
+    Where the mesh is fine it keeps the detail; where it is coarse it rounds
+    off the corners between the elements and the steps between the columns."""
+    sigma = SMOOTHING * blur(size, SEAM / SAMPLE) / SAMPLE  # pixels; the element size blurred, or seams show where it jumps
+    levels = sigma.min() * 2.0 ** np.arange(int(np.ceil(np.log2(sigma.max() / sigma.min()))) + 1)
+    position = np.log2(sigma / levels[0])
+    lower = np.minimum(position.astype(int), max(len(levels) - 2, 0))
+    upper = np.minimum(lower + 1, len(levels) - 1)
+    frac = np.clip(position - lower, 0, 1)
+    mask = found.astype(float)
+    norms = [np.maximum(blur(mask, s), 1e-6) for s in levels]
+    log(f"smoothing: sigma {SMOOTHING:g} x element size, {sigma.min() * SAMPLE:.2f} to {sigma.max() * SAMPLE:.1f} m, "
+        f"blurs at {', '.join(f'{s * SAMPLE:.2g}' for s in levels)} m")
+
+    def smooth(v):
+        data = np.where(found, v, 0.0)
+        out = np.zeros_like(data)
+        for k, s in enumerate(levels):
+            weight = np.where(lower == k, 1 - frac, 0) + np.where(upper == k, frac, 0)
+            if weight.any():
+                out += weight * blur(data, s) / norms[k]
+        return out
+    return smooth
 
 
 def monitors(run, column, label):
@@ -283,22 +341,46 @@ def main(argv=None):
         ids, xyz, quads = surface.surface(vtk)
     plotter = scene(scene_dir, (width, view_h))
     terrain = plotter.meshes[0]
-    overlay = terrain.subdivide(REFINE, "linear") if REFINE else terrain.copy()
-    overlay.point_data.clear()
-    walls = np.abs(overlay.cell_normals[:, 2]) < 0.05  # the DTM's skirt round the domain, not the cliffs
-    overlay = overlay.extract_cells(~walls).extract_surface()
-    log(f"overlay: the terrain refined {REFINE} times, {overlay.n_points:,} points, {walls.sum():,} wall triangles left out")
-    nodes, weights, found = locate(overlay.points, xyz, quads)
-    overlay.points[:, 2] += 0.5  # just above the photo
+    # the SAMPLE raster: the terrain's 2 m lattice refined, a point (and a height) per node
+    refine = int(round(np.log2(2.0 / SAMPLE)))
+    fine = terrain.subdivide(refine, "linear") if refine > 0 else terrain
+    corner = terrain.points[:, :2].min(0)
+    ij = np.rint((fine.points[:, :2] - corner) / SAMPLE).astype(int)
+    shape = tuple(ij.max(0)[::-1] + 1)  # rows y, columns x
+    if np.abs(fine.points[:, :2] - corner - ij * SAMPLE).max() > 1e-3 or len(np.unique(ij, axis=0)) != np.prod(shape):
+        raise SystemExit(f"the terrain refined {refine} times is not a full {SAMPLE} m lattice")
+    points = np.empty((*shape, 3))
+    points[ij[:, 1], ij[:, 0]] = fine.points
+    log(f"field raster: {shape[1]} x {shape[0]} nodes at {SAMPLE:g} m (the terrain refined {refine} times), "
+        f"drawn at {PIXEL:g} m")
+    nodes, weights, found, size = locate(points.reshape(-1, 3), xyz, quads)
+    nodes, weights = nodes.astype(np.int32), weights.astype(np.float32)
+    found, size = found.reshape(shape), size.reshape(shape)
+    smooth = smoother(size, found) if SMOOTHING else None
+    up = SAMPLE / PIXEL
+    drawn = (int((shape[0] - 1) * up) + 1, int((shape[1] - 1) * up) + 1)
+    visible = zoom(found.astype(np.uint8), (drawn[0] / shape[0], drawn[1] / shape[1]), order=0) > 0
+    cache = {}
 
-    def field(step):
-        u = np.asarray(np.memmap(vtk / f"{name}_{step:08d}.bin", "<f4", "r").reshape(-1, 3)[ids, component], float)
-        v = (u[nodes] * weights).sum(1)
-        v[~found] = np.nan
+    def field(step, fine_raster=True):
+        """The field at a snapshot on the SAMPLE raster, smoothed; on the PIXEL raster (cubic) if fine_raster."""
+        if (step, fine_raster) in cache:
+            return cache[step, fine_raster]
+        u = np.asarray(np.memmap(vtk / f"{name}_{step:08d}.bin", "<f4", "r").reshape(-1, 3)[ids, component], np.float32)
+        v = (u[nodes] * weights).sum(1).reshape(shape)
+        v = smooth(v) if smooth else np.where(found, v, 0.0)
+        if fine_raster:
+            v = zoom(v, (drawn[0] / shape[0], drawn[1] / shape[1]), order=3).astype(np.float32)
+            v[~visible] = np.nan
+        else:
+            v[~found] = np.nan
+        if len(cache) > 3:
+            cache.pop(next(iter(cache)))
+        cache[step, fine_raster] = v
         return v
 
-    sample = [field(st) for st in steps[::max(1, len(steps) // 40)]]
-    top = np.nanpercentile(np.abs(np.concatenate(sample)), CLIP)
+    sample = [field(st, False) for st in steps[::max(1, len(steps) // 40)]]
+    top = np.nanpercentile(np.abs(np.concatenate([v.ravel() for v in sample])), CLIP)
     if logscale:
         clip = 10.0 ** np.round(np.log10(top))
         floor = clip / 10**DECADES
@@ -315,14 +397,27 @@ def main(argv=None):
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.sign(v) * np.clip(np.log10(np.abs(v) / floor) / DECADES, 0, 1)
 
-    overlay[label] = shade(field(steps[0]))
-    lut = pv.LookupTable(cmap="RdBu_r", n_values=256, scalar_range=(-1, 1))
-    rgba = lut.values.copy()
+    colours = (plt.get_cmap("RdBu_r")(np.linspace(0, 1, 256)) * 255).astype(np.uint8)
     ramp = np.abs(np.linspace(-1, 1, 256))
-    rgba[:, 3] = (np.minimum(1, ramp * 2.5) if logscale else np.sqrt(ramp)) * 0.85 * 255  # clear at zero
-    lut.values = rgba
-    lut.nan_opacity = 0.0
-    plotter.add_mesh(overlay, scalars=label, cmap=lut, clim=(-1, 1), ambient=0.6, diffuse=0.4, show_scalar_bar=False)
+    colours[:, 3] = (np.minimum(1, ramp * 2.5) if logscale else np.sqrt(ramp)) * 0.85 * 255  # clear at zero
+
+    def texture_of(v):
+        """The RGBA texture of v on the PIXEL raster, clear where there is no field; north up."""
+        s = shade(v)
+        rgba = colours[np.rint((np.nan_to_num(s) + 1) * 127.5).astype(np.uint8)]
+        rgba[np.isnan(s), 3] = 0
+        tex = pv.Texture(np.ascontiguousarray(rgba[::-1]))
+        tex.interpolate = True
+        return tex
+
+    # the overlay: the terrain just above the photo, the field's raster as its texture
+    overlay = terrain.copy()
+    overlay.point_data.clear()
+    overlay = overlay.extract_cells(np.abs(overlay.cell_normals[:, 2]) >= 0.05).extract_surface()  # not the DTM's skirt
+    overlay.points[:, 2] += 0.5
+    extent = (np.array(drawn[::-1]) - 1) * PIXEL
+    overlay.active_texture_coordinates = (overlay.points[:, :2] - corner + PIXEL / 2) / (extent + PIXEL)
+    field_actor = plotter.add_mesh(overlay, texture=texture_of(field(steps[0])), ambient=0.6, diffuse=0.4)
     railway(plotter, scene_dir, track, (width, view_h))
     cars, texture = build()
     train = place(cars, path_run, s_run, head(0))
@@ -380,11 +475,11 @@ def main(argv=None):
         t = frame_t[n]
         k = min(np.searchsorted(times, t, side="right") - 1, len(times) - 2)
         a = (t - times[k]) / (times[k + 1] - times[k])
-        overlay[label] = shade((1 - a) * field(steps[k]) + a * field(steps[k + 1]))
+        field_actor.texture = texture_of((1 - a) * field(steps[k]) + a * field(steps[k + 1]))
         train.points = place(cars, path_run, s_run, head(t)).points
         cam, focal = cams[n], focals[n]
         plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
-        plotter.camera.clipping_range = (1.0, 12000.0)
+        plotter.camera.clipping_range = (5.0, 12000.0)  # the near plane far enough for the overlay, 0.5 m up, not to flicker
         plotter.render()
         image.set_data(plotter.screenshot(return_img=True)[:, :, :3])
         stamp.set_text(f"$t = {t:.2f}$ s,  train at {abs(speed) * 3.6:.0f} km/h,  {symbol} of the {long_name}")

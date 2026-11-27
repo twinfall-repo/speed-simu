@@ -120,15 +120,17 @@ From the repository's root. `RUN_DIR` is a run of `cases/rialba_ttb` or
 load when it first reaches half its peak), the field spreads over the
 orthophoto, and the five points over the towers move in a plot below,
 marked in the view with the same colours. The field goes from the free
-surface of the voxel mesh to the terrain of the orthophoto, refined to 1 m:
-each terrain point takes the value on the voxel top over it with SPEED's
-own biquadratic basis on its 3 x 3 nodes (linear on slanted faces), so what
-shows is the mesh's resolution: 0.8 m nodes at the towers, 2.3 m around,
-7 to 21 m far off. The colours are linear, clear around zero, opaque towards
+surface of the voxel mesh to a raster on the terrain, at 0.5 m (`SAMPLE`):
+each node takes the value on the voxel top over it with SPEED's own
+biquadratic basis on its 3 x 3 nodes (linear on slanted faces). Then, for
+the picture, a Gaussian smoothing over half the element size under each
+node (`SMOOTHING`), which rounds off the 4.7 m elements and the steps of the
+staircase and leaves the 1.57 m ones nearly as they are, and a cubic
+resampling to 0.25 m (`PIXEL`), drawn as the terrain's texture. The colours are linear, clear around zero, opaque towards
 the 99.9 percentile of |value| over the run; with `log`, a signed log scale
 over 3 decades. The movie runs 2x slower than the simulation (`SLOW`),
 the field interpolated between snapshots. Constants at the top of the
-script: `MONITORS`, `CAMERA`, `SLOW`, `CLIP`, `DECADES` (with `log`), `REFINE`; the shots
+script: `MONITORS`, `CAMERA`, `SLOW`, `CLIP`, `DECADES` (with `log`), `SAMPLE`, `PIXEL`, `SMOOTHING`; the shots
 `FOLLOW`, `FAR`, `HOLD`, `EASE`, `SMOOTH`; `FONT` of the labels.
 
 The solution is too heavy to bring home: render on the cluster, with the
