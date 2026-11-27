@@ -110,22 +110,25 @@ any Python with pyvista and ffmpeg, off screen.
 ## 5. The movie of a SPEED run with the train loads
 
 ```bash
-python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FRAME ...]
+python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FIELD] [log] [FRAME ...]
 ```
 
-From the repository's root. `RUN_DIR` is a run of `cases/rialba_ttb` (its
-`surface/` and `monitors/`, from `run_case.sh`), `SCENE_DIR` the scene of
-step 1. The train runs as in the loads of `TTB2SPEED` (from each load's first
-non-zero time: 80 km/h towards the south, out of the tunnel at s 984 m), the
-x displacement spreads over the orthophoto, and the five points over the
-towers move in a plot below, marked in the view with the same colours. The
-field goes from the free surface of the voxel mesh to the terrain of the
-orthophoto (every 2 m) as the inverse-distance mean of the 4 nearest surface
-points: far from the towers the 42 m cells stand up to ~20 m off the DTM.
-The colours are clear around zero, opaque towards the 99.5 percentile of
-|u_x| over the run. The movie runs 2x slower than the simulation (`SLOW`),
+From the repository's root. `RUN_DIR` is a run of `cases/rialba_ttb` or
+`cases/rialba_ttb_nb` (its `VTKOUT/` and `monitors/`, from `run_case.sh`),
+`SCENE_DIR` the scene of step 1, `FIELD` one of `Disp_x` (the default) ...
+`Vel_z`. The train runs as in the loads of `TTB2SPEED` (an axle is over a
+load when it first reaches half its peak), the field spreads over the
+orthophoto, and the five points over the towers move in a plot below,
+marked in the view with the same colours. The field goes from the free
+surface of the voxel mesh to the terrain of the orthophoto, refined to 1 m:
+each terrain point takes the value on the voxel top over it with SPEED's
+own biquadratic basis on its 3 x 3 nodes (linear on slanted faces), so what
+shows is the mesh's resolution: 0.8 m nodes at the towers, 2.3 m around,
+7 to 21 m far off. The colours are linear, clear around zero, opaque towards
+the 99.9 percentile of |value| over the run; with `log`, a signed log scale
+over 3 decades. The movie runs 2x slower than the simulation (`SLOW`),
 the field interpolated between snapshots. Constants at the top of the
-script: `COMPONENT`, `MONITORS`, `CAMERA`, `SLOW`, `CLIP`; the shots
+script: `MONITORS`, `CAMERA`, `SLOW`, `CLIP`, `DECADES` (with `log`), `REFINE`; the shots
 `FOLLOW`, `FAR`, `HOLD`, `EASE`, `SMOOTH`; `FONT` of the labels.
 
 The solution is too heavy to bring home: render on the cluster, with the

@@ -3,7 +3,7 @@ under the towers as in the loads, a component of the displacement or of
 the velocity spreads over the orthophoto, and the towers' monitored points
 move in a plot below:
 
-    python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FIELD] [FRAME ...]
+    python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FIELD] [log] [FRAME ...]
 
 FIELD is Disp_x (the default), Disp_y, Disp_z, Vel_x, Vel_y or Vel_z, read
 from SPEED's own output in RUN_DIR/VTKOUT on the free surface of surface.py.
@@ -15,12 +15,16 @@ case (output/rialba), as for movie.py.
 - The train: the first axle reaches each load at the first time its load
   function reaches half its peak (the tapered loads at the ends left out); a line through those (arc length, time) pairs gives
   the head's arc length in time, and the direction it runs.
-- The field: the component of FIELD, from the free
-  surface of the voxel mesh to the terrain of the orthophoto (every 2 m):
-  each terrain point takes the inverse-distance mean of its NEIGHBOURS nearest
-  surface points, and none (transparent) farther than REACH m from all of
-  them. A diverging colour map, transparent around zero and opaque towards
-  +-the CLIP percentile of |value| over the run, over the orthophoto.
+- The field: the component of FIELD, from the free surface of the voxel
+  mesh to the terrain of the orthophoto, refined REFINE times (2 m to 1 m
+  for 1): each terrain point takes the value interpolated in x and y on the
+  upward face of the surface over it, of several the closest in z: on the
+  top of a voxel with SPEED's own biquadratic basis on its 3 x 3 nodes, on a
+  slanted face linearly. So the mesh's own resolution shows, 0.8 m
+  at the towers, 2.3 m around, 7 to 21 m far off. A diverging colour map,
+  linear up to +-the CLIP percentile of |value| over the run, clear at zero
+  and more opaque towards it; with log, signed log over DECADES decades up
+  to the decade nearest that percentile, clear below them.
 - The camera: abreast of the head of the train, out over the lake, for
   FOLLOW s of simulated time; a little farther back (FAR of the way to
   CAMERA) to HOLD s; then over EASE s out to CAMERA, the towers and the
@@ -60,8 +64,10 @@ QUALITY = {"low": ((960, 540), 12), "high": ((1920, 1080), 30)}
 SLOW = 2  # the movie runs this many times slower than the simulation
 FIELDS = {"Disp": ("u", "m", "displacement"), "Vel": ("v", "m/s", "velocity")}  # SPEED's name: symbol, unit, name
 MONITORS = (8, 9, 10, 11, 12)  # the towers' points in LS.input
-NEIGHBOURS, REACH = 4, 50.0  # surface points averaged per terrain point; m beyond which none (the 42 m cells far from the towers stand up to ~20 m off the DTM)
-CLIP = 99.5  # the colour scale's end: this percentile of |value| over the run
+REFINE = 1  # times the terrain's triangles are split in four for the field: its 2 m to 1 m
+CANDIDATES = 24  # upward triangles of the surface, nearest by centre, tried for each terrain point
+CLIP = 99.9  # the colour scale's end: this percentile of |value| over the run (log: the decade nearest it)
+DECADES = 3  # decades of the signed log colour scale (log) below its end
 PLOT = 0.28  # the plot's share of the frame's height
 CAMERA = ((-1080.0, -860.0, 120.0), (-220.0, 90.0, -95.0))  # camera, focal point: the towers and the loads' stretch
 # s of simulated time: the camera follows the head of the train up to FOLLOW, eases back over 1 s to a
@@ -127,6 +133,87 @@ def cameras(path, s, s0, speed, frame_t, per_second):
     return (1 - a) * cam + a * np.array(CAMERA[0]), (1 - a) * focal + a * np.array(CAMERA[1])
 
 
+def candidates(centres, points, test):
+    """For each point, of the CANDIDATES items nearest by centre in x and y, the
+    one test(k) says it falls in, closest in z: (item, gap in z, its data)."""
+    _, cand = cKDTree(centres).query(points[:, :2], CANDIDATES)
+    best, gap, data = np.full(len(points), -1), np.full(len(points), np.inf), None
+    for j in range(CANDIDATES):
+        k = cand[:, j]
+        inside, z, extra = test(k)
+        better = inside & (np.abs(z - points[:, 2]) < gap)
+        best[better], gap[better] = k[better], np.abs(z - points[:, 2])[better]
+        data = extra if data is None else np.where(better[:, None], extra, data)
+    return best, gap, data
+
+
+def locate(points, xyz, quads):
+    """Every point under the upward faces of the free surface, as (the 9
+    surface points, their weights) of its value, and whether it is under one.
+    The surface is SPEED's degree 2: its sub-cell quads come four to an element
+    face (surface.py keeps SPEED's order). On a horizontal element face, the
+    top of a voxel, the value is the face's biquadratic interpolant on its
+    3 x 3 nodes, SPEED's own; on a slanted one, linear on the sub-quads'
+    triangles. Of several faces over a point, the closest in z."""
+    if len(quads) % 4:
+        raise SystemExit(f"{len(quads)} surface quads, not four to an element face: not SPEED degree 2")
+    groups = quads.reshape(-1, 4, 4)
+    a, b, d = (xyz[groups[:, 0, i]] for i in (0, 1, 3))
+    normal = np.cross(b - a, d - a)
+    nz = np.abs(normal[:, 2]) / np.linalg.norm(normal, axis=1)
+    # the horizontal faces that are rectangles in x and y: their 3 x 3 nodes in a grid, x then y;
+    # the others (the trapezoids where the voxels change size) go with the slanted ones
+    flat = groups[nz > 0.999]
+    p = xyz[flat.reshape(-1, 16)]
+    lo, hi = p[..., :2].min(1), p[..., :2].max(1)
+    ij = np.rint((p[..., :2] - lo[:, None]) / (hi - lo)[:, None] * 2)
+    rect = np.all(np.abs(p[..., :2] - (lo[:, None] + ij * (hi - lo)[:, None] / 2)) < 1e-3, (1, 2)) \
+        & (np.ptp(p[..., 2], axis=1) < 1e-3)
+    slanted = np.concatenate([groups[(nz > 0.3) & (nz <= 0.999)], flat[~rect]])
+    flat, p, lo, hi, ij = flat[rect], p[rect], lo[rect], hi[rect], ij[rect].astype(int)
+    ids = flat.reshape(-1, 16)
+    grid = np.full((len(flat), 3, 3), -1)
+    grid[np.repeat(np.arange(len(flat)), 16), ij[..., 0].ravel(), ij[..., 1].ravel()] = ids.ravel()
+    if (grid < 0).any():
+        raise SystemExit("rectangular element faces whose nodes do not fill a 3 x 3 grid: not SPEED degree 2")
+    ztop = p[:, 0, 2]
+
+    def in_flat(k):
+        xi = 2 * (points[:, :2] - lo[k]) / (hi[k] - lo[k]) - 1
+        return np.all(np.abs(xi) <= 1 + 1e-9, 1), ztop[k], xi
+
+    best, gap, xi = candidates((lo + hi) / 2, points, in_flat)
+    basis = lambda s: np.stack([s * (s - 1) / 2, 1 - s * s, s * (s + 1) / 2], -1)
+    weights = (basis(xi[:, 0])[:, :, None] * basis(xi[:, 1])[:, None, :]).reshape(-1, 9)
+    nodes = grid[np.maximum(best, 0)].reshape(-1, 9)
+    # the slanted faces: linear on the two triangles of each sub-quad
+    tri = np.vstack([slanted.reshape(-1, 4)[:, [0, 1, 2]], slanted.reshape(-1, 4)[:, [0, 2, 3]]])
+    ta, tb, tc = (xyz[tri[:, i]] for i in range(3))
+
+    def in_tri(k):
+        e1, e2, r = tb[k, :2] - ta[k, :2], tc[k, :2] - ta[k, :2], points[:, :2] - ta[k, :2]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            det = e1[:, 0] * e2[:, 1] - e2[:, 0] * e1[:, 1]
+            l1 = (r[:, 0] * e2[:, 1] - e2[:, 0] * r[:, 1]) / det
+            l2 = (e1[:, 0] * r[:, 1] - r[:, 0] * e1[:, 1]) / det
+        l = np.column_stack([1 - l1 - l2, l1, l2])
+        return l.min(1) >= -1e-9, (l * np.stack([ta[k, 2], tb[k, 2], tc[k, 2]], 1)).sum(1), l
+
+    t_best, t_gap, lam = candidates(((ta + tb + tc) / 3)[:, :2], points, in_tri)
+    use = (t_best >= 0) & (t_gap < gap)
+    nodes[use] = np.column_stack([tri[t_best[use]], np.repeat(tri[t_best[use], :1], 6, 1)])
+    weights[use] = np.column_stack([lam[use], np.zeros((use.sum(), 6))])
+    found = (best >= 0) | (t_best >= 0)
+    gap = np.where(use, t_gap, gap)
+    log(f"field on {len(points):,} terrain points: {len(flat):,} horizontal element faces (biquadratic), "
+        f"{len(slanted):,} slanted or not rectangles (linear, {(~rect).sum():,} horizontal), "
+        f"{len(groups) - len(flat) - len(slanted):,} walls left out; "
+        f"{(found & ~use).mean():.2%} of the points on a horizontal face, {use.mean():.2%} on a slanted one, "
+        f"{(~found).sum():,} on none (left clear); terrain to face in z {np.median(gap[found]):.1f} m median, "
+        f"{np.percentile(gap[found], 99):.1f} m at 99%")
+    return nodes, weights, found
+
+
 def monitors(run, column, label):
     """{point: (t, value)} of the column (ux, vx, ...) of monitors.py at MONITORS, and their coordinates."""
     series, where = {}, {}
@@ -149,7 +236,8 @@ def main(argv=None):
     if len(argv) < 4 or argv[3] not in QUALITY:
         raise SystemExit(__doc__)
     run, scene_dir, out, quality = Path(argv[0]), Path(argv[1]), Path(argv[2]), argv[3]
-    chosen = [a for a in argv[4:] if not a.isdigit()] or ["Disp_x"]
+    logscale = "log" in argv[4:]
+    chosen = [a for a in argv[4:] if not a.isdigit() and a != "log"] or ["Disp_x"]
     only = [int(f) for f in argv[4:] if f.isdigit()]
     name, axis = chosen[0].split("_") if "_" in chosen[0] else (chosen[0], "")
     if name not in FIELDS or axis not in ("x", "y", "z") or len(chosen) > 1:
@@ -188,39 +276,53 @@ def main(argv=None):
     if ids_file.exists():  # surface.py's: the free surface's points among SPEED's
         ids = np.fromfile(ids_file, "<i8")
         xyz = np.fromfile(run / "surface" / "points.bin", "<f8").reshape(-1, 3)
-        log(f"free surface from {ids_file}: {len(ids):,} points")
+        quads = np.fromfile(run / "surface" / "quads.bin", "<i4").reshape(-1, 4)
+        log(f"free surface from {ids_file}: {len(ids):,} points, {len(quads):,} quadrilaterals")
     else:
         log(f"no {ids_file}: the free surface from the mesh, as surface.py does")
-        ids, xyz, _ = surface.surface(vtk)
+        ids, xyz, quads = surface.surface(vtk)
     plotter = scene(scene_dir, (width, view_h))
     terrain = plotter.meshes[0]
-    dist, near = cKDTree(xyz).query(terrain.points, NEIGHBOURS)
-    weight = 1 / np.maximum(dist, 1e-3)
-    weight /= weight.sum(1)[:, None]
-    outside = dist[:, 0] > REACH
-    log(f"terrain {terrain.n_points:,} points from {len(xyz):,} surface points: nearest within "
-        f"{np.median(dist[:, 0]):.2f} m (median), {np.percentile(dist[:, 0], 99):.2f} m (99%); "
-        f"{outside.sum():,} beyond {REACH:g} m, left clear")
+    overlay = terrain.subdivide(REFINE, "linear") if REFINE else terrain.copy()
+    overlay.point_data.clear()
+    walls = np.abs(overlay.cell_normals[:, 2]) < 0.05  # the DTM's skirt round the domain, not the cliffs
+    overlay = overlay.extract_cells(~walls).extract_surface(algorithm="dataset_surface")
+    log(f"overlay: the terrain refined {REFINE} times, {overlay.n_points:,} points, {walls.sum():,} wall triangles left out")
+    nodes, weights, found = locate(overlay.points, xyz, quads)
+    overlay.points[:, 2] += 0.5  # just above the photo
 
     def field(step):
         u = np.asarray(np.memmap(vtk / f"{name}_{step:08d}.bin", "<f4", "r").reshape(-1, 3)[ids, component], float)
-        v = (u[near] * weight).sum(1)
-        v[outside] = np.nan
+        v = (u[nodes] * weights).sum(1)
+        v[~found] = np.nan
         return v
 
     sample = [field(st) for st in steps[::max(1, len(steps) // 40)]]
-    clip = np.nanpercentile(np.abs(np.concatenate(sample)), CLIP)
-    log(f"colour scale +-{clip:.3e} {unit}, the {CLIP:g} percentile of |{label}| on the terrain")
-    overlay = terrain.copy()
-    overlay.points[:, 2] += 0.5  # just above the photo
-    overlay.point_data.clear()
-    overlay[label] = field(steps[0])
-    lut = pv.LookupTable(cmap="RdBu_r", n_values=256, scalar_range=(-clip, clip))
+    top = np.nanpercentile(np.abs(np.concatenate(sample)), CLIP)
+    if logscale:
+        clip = 10.0 ** np.round(np.log10(top))
+        floor = clip / 10**DECADES
+        log(f"colour scale: signed log from {floor:.0e} to {clip:.0e} {unit}, the decade nearest the "
+            f"{CLIP:g} percentile of |{label}| on the terrain, {top:.3e}")
+    else:
+        clip = top
+        log(f"colour scale: linear to +-{clip:.3e} {unit}, the {CLIP:g} percentile of |{label}| on the terrain")
+
+    def shade(v):
+        """v in -1 to 1: linear to +-clip, or the signed log, 0 below floor, +-1 from clip."""
+        if not logscale:
+            return np.clip(v / clip, -1, 1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.sign(v) * np.clip(np.log10(np.abs(v) / floor) / DECADES, 0, 1)
+
+    overlay[label] = shade(field(steps[0]))
+    lut = pv.LookupTable(cmap="RdBu_r", n_values=256, scalar_range=(-1, 1))
     rgba = lut.values.copy()
-    rgba[:, 3] = np.minimum(1, np.abs(np.linspace(-1, 1, 256)) * 1.6) * 0.85 * 255  # clear at zero
+    ramp = np.abs(np.linspace(-1, 1, 256))
+    rgba[:, 3] = (np.minimum(1, ramp * 2.5) if logscale else np.sqrt(ramp)) * 0.85 * 255  # clear at zero
     lut.values = rgba
     lut.nan_opacity = 0.0
-    plotter.add_mesh(overlay, scalars=label, cmap=lut, clim=(-clip, clip), ambient=0.6, diffuse=0.4, show_scalar_bar=False)
+    plotter.add_mesh(overlay, scalars=label, cmap=lut, clim=(-1, 1), ambient=0.6, diffuse=0.4, show_scalar_bar=False)
     railway(plotter, scene_dir, track, (width, view_h))
     cars, texture = build()
     train = place(cars, path_run, s_run, head(0))
@@ -244,9 +346,18 @@ def main(argv=None):
     stamp = ax_view.text(0.012, 0.95, "", transform=ax_view.transAxes, va="top", color="white",
                          fontsize=1.2 * fs, path_effects=halo)
     bar_ax = ax_view.inset_axes((0.62, 0.86, 0.34, 0.04))
-    bar = fig.colorbar(plt.cm.ScalarMappable(plt.Normalize(-clip, clip), "RdBu_r"), cax=bar_ax,
+    bar = fig.colorbar(plt.cm.ScalarMappable(plt.Normalize(-1, 1), "RdBu_r"), cax=bar_ax,
                        orientation="horizontal")
-    bar.formatter.set_powerlimits((0, 0))
+    if logscale:
+        exponents = np.round(np.log10(clip)) - np.arange(DECADES + 1)
+        bar.set_ticks(np.concatenate([-np.linspace(1, 0, DECADES + 1), np.linspace(0, 1, DECADES + 1)[1:]]),
+                      labels=[f"$-10^{{{e:.0f}}}$" for e in exponents[:-1]] + [f"$\\pm 10^{{{exponents[-1]:.0f}}}$"]
+                      + [f"$10^{{{e:.0f}}}$" for e in exponents[::-1][1:]])
+    else:
+        e = np.floor(np.log10(clip))
+        bar.set_ticks([-1, -0.5, 0, 0.5, 1], labels=[f"${v * clip / 10**e:.2g}$" for v in (-1, -0.5, 0, 0.5, 1)])
+        bar.ax.text(1.0, -1.6, f"$\\times 10^{{{e:.0f}}}$", transform=bar.ax.transAxes, ha="right", va="top",
+                    color="white", path_effects=halo)
     bar.ax.xaxis.set_tick_params(color="white", labelcolor="white")
     bar.ax.xaxis.get_offset_text().set(color="white", path_effects=halo)
     for tick in bar.ax.get_xticklabels():
@@ -269,7 +380,7 @@ def main(argv=None):
         t = frame_t[n]
         k = min(np.searchsorted(times, t, side="right") - 1, len(times) - 2)
         a = (t - times[k]) / (times[k + 1] - times[k])
-        overlay[label] = (1 - a) * field(steps[k]) + a * field(steps[k + 1])
+        overlay[label] = shade((1 - a) * field(steps[k]) + a * field(steps[k + 1]))
         train.points = place(cars, path_run, s_run, head(t)).points
         cam, focal = cams[n], focals[n]
         plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
@@ -292,7 +403,7 @@ def main(argv=None):
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError:
         ffmpeg = "ffmpeg"
-    video = out / f"speed_{quality}_{name}_{axis}.mp4"
+    video = out / f"speed_{quality}_{name}_{axis}{'_log' if logscale else ''}.mp4"
     command = [ffmpeg, "-y", "-loglevel", "error", "-framerate", str(fps),
                "-i", str(frames_dir / "frame_%05d.png"), "-c:v", "libx264", "-crf", "18",
                "-pix_fmt", "yuv420p", str(video)]
