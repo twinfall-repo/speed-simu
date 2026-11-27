@@ -379,8 +379,10 @@ def main(argv=None):
         cache[step, fine_raster] = v
         return v
 
-    sample = [field(st, False) for st in steps[::max(1, len(steps) // 40)]]
-    top = np.nanpercentile(np.abs(np.concatenate([v.ravel() for v in sample])), CLIP)
+    # the colour scale from 40 snapshots, every 4th node each way: 40 whole rasters would not fit in memory
+    sample = [np.abs(field(st, False)[::4, ::4]).astype(np.float32).ravel() for st in steps[::max(1, len(steps) // 40)]]
+    cache.clear()
+    top = np.nanpercentile(np.concatenate(sample), CLIP)
     if logscale:
         clip = 10.0 ** np.round(np.log10(top))
         floor = clip / 10**DECADES
