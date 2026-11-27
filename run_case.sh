@@ -284,7 +284,7 @@ if [ -n "${SPEED_MOVIE:-}" ]; then
     [[ "${scene}" = /* ]] || scene="${here}/${scene}"
     started=$(date +%s)
     if [ -d surface ] && python3 "${here}/movie/speed_movie.py" "${run_dir}" "${scene}" "${run_dir}/movie" high > movie.log 2>&1; then
-        echo "movie:     ${run_dir}/movie/speed_high.mp4 ($(du -h movie/speed_high.mp4 | cut -f1)," \
+        echo "movie:     ${run_dir}/movie/speed_high_Disp_x.mp4 ($(du -h movie/speed_high_Disp_x.mp4 | cut -f1)," \
             "$(( $(date +%s) - started ))s), scene ${scene}" | tee -a run_info.txt
         rm -r movie/frames
     else

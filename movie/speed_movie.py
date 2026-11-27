@@ -1,11 +1,13 @@
 """The movie of a SPEED run with the train loads of TTB2SPEED: the train runs
-under the towers as in the loads, the displacement spreads over the
-orthophoto, and the towers' monitored points move in a plot below:
+under the towers as in the loads, a component of the displacement or of
+the velocity spreads over the orthophoto, and the towers' monitored points
+move in a plot below:
 
-    python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FRAME ...]
+    python movie/speed_movie.py RUN_DIR SCENE_DIR OUT_DIR low|high [FIELD] [FRAME ...]
 
-RUN_DIR is a run of run_case.sh with surface.py's output (RUN_DIR/surface,
-the displacement on the free surface), monitors.py's (RUN_DIR/monitors) and
+FIELD is Disp_x (the default), Disp_y, Disp_z, Vel_x, Vel_y or Vel_z, read
+from SPEED's own output in RUN_DIR/VTKOUT on the free surface of surface.py.
+RUN_DIR is a run of run_case.sh with monitors.py's output (RUN_DIR/monitors) and
 the case's files (its .mate, with the PLOZ and FUNC lines of the loads, and
 the load files they name). SCENE_DIR is dtm_voxelization's output of the
 case (output/rialba), as for movie.py.
@@ -13,7 +15,7 @@ case (output/rialba), as for movie.py.
 - The train: the first axle reaches each load at the first time its load
   function reaches half its peak (the tapered loads at the ends left out); a line through those (arc length, time) pairs gives
   the head's arc length in time, and the direction it runs.
-- The field: the component COMPONENT of the displacement, from the free
+- The field: the component of FIELD, from the free
   surface of the voxel mesh to the terrain of the orthophoto (every 2 m):
   each terrain point takes the inverse-distance mean of its NEIGHBOURS nearest
   surface points, and none (transparent) farther than REACH m from all of
@@ -30,7 +32,7 @@ case (output/rialba), as for movie.py.
 The movie runs SLOW times slower than the simulated time; the field is
 interpolated linearly between snapshots. low is 960 x 540 at 12 frames a
 second, high 1920 x 1080 at 30. Frames go to OUT_DIR/frames, ffmpeg makes
-OUT_DIR/speed_<quality>.mp4; given FRAME numbers, only those, no video.
+OUT_DIR/speed_<quality>_<FIELD>.mp4; given FRAME numbers, only those, no video.
 """
 
 import re
@@ -56,7 +58,7 @@ from train import build, place  # noqa: E402
 
 QUALITY = {"low": ((960, 540), 12), "high": ((1920, 1080), 30)}
 SLOW = 2  # the movie runs this many times slower than the simulation
-COMPONENT, LABEL = 0, "u_x"  # the displacement's component shown, and its name
+FIELDS = {"Disp": ("u", "m", "displacement"), "Vel": ("v", "m/s", "velocity")}  # SPEED's name: symbol, unit, name
 MONITORS = (8, 9, 10, 11, 12)  # the towers' points in LS.input
 NEIGHBOURS, REACH = 4, 50.0  # surface points averaged per terrain point; m beyond which none (the 42 m cells far from the towers stand up to ~20 m off the DTM)
 CLIP = 99.5  # the colour scale's end: this percentile of |value| over the run
@@ -125,8 +127,8 @@ def cameras(path, s, s0, speed, frame_t, per_second):
     return (1 - a) * cam + a * np.array(CAMERA[0]), (1 - a) * focal + a * np.array(CAMERA[1])
 
 
-def monitors(run):
-    """{point: (t, value)} of COMPONENT of the displacement at MONITORS, and their coordinates."""
+def monitors(run, column, label):
+    """{point: (t, value)} of the column (ux, vx, ...) of monitors.py at MONITORS, and their coordinates."""
     series, where = {}, {}
     for p in MONITORS:
         path = run / "monitors" / f"point_{p:02d}.txt"
@@ -134,9 +136,11 @@ def monitors(run):
         where[p] = np.array([float(v) for v in re.findall(r"x (\S+) y (\S+) z (\S+)", head[0])[0]])
         columns = head[1].lstrip("# ").split()
         data = np.loadtxt(path)
-        series[p] = (data[:, 0], data[:, columns.index(["ux", "uy", "uz"][COMPONENT])])
-    log(f"monitors {MONITORS}: {len(series[MONITORS[0]][0])} times each, |{LABEL}| up to "
-        f"{max(np.abs(v).max() for _, v in series.values()):.3e} m")
+        if column not in columns:
+            raise SystemExit(f"{path}: no column {column} (has {columns}): set OPTIOUT in SPEED.input")
+        series[p] = (data[:, 0], data[:, columns.index(column)])
+    log(f"monitors {MONITORS}: {len(series[MONITORS[0]][0])} times each, |{label}| up to "
+        f"{max(np.abs(v).max() for _, v in series.values()):.3e}")
     return series, where
 
 
@@ -145,7 +149,15 @@ def main(argv=None):
     if len(argv) < 4 or argv[3] not in QUALITY:
         raise SystemExit(__doc__)
     run, scene_dir, out, quality = Path(argv[0]), Path(argv[1]), Path(argv[2]), argv[3]
-    only = [int(f) for f in argv[4:]]
+    chosen = [a for a in argv[4:] if not a.isdigit()] or ["Disp_x"]
+    only = [int(f) for f in argv[4:] if f.isdigit()]
+    name, axis = chosen[0].split("_") if "_" in chosen[0] else (chosen[0], "")
+    if name not in FIELDS or axis not in ("x", "y", "z") or len(chosen) > 1:
+        raise SystemExit(f"field {' '.join(chosen)}: not one of Disp_x, ..., Vel_z\n{__doc__}")
+    component = "xyz".index(axis)
+    symbol_letter, unit, long_name = FIELDS[name]
+    label = f"{symbol_letter}_{axis}"
+    log(f"field {name}_{axis}: {label} ({unit}) of the {long_name}, from {run / 'VTKOUT'}")
     (width, height), fps = QUALITY[quality]
     frames_dir = out / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
@@ -171,7 +183,15 @@ def main(argv=None):
         s_run, path_run, head = s, path, lambda t: s0 + speed * t
 
     # the field, from the free surface to the terrain
-    xyz = np.fromfile(run / "surface" / "points.bin", "<f8").reshape(-1, 3)
+    vtk = run / "VTKOUT"
+    ids_file = run / "surface" / "ids.bin"
+    if ids_file.exists():  # surface.py's: the free surface's points among SPEED's
+        ids = np.fromfile(ids_file, "<i8")
+        xyz = np.fromfile(run / "surface" / "points.bin", "<f8").reshape(-1, 3)
+        log(f"free surface from {ids_file}: {len(ids):,} points")
+    else:
+        log(f"no {ids_file}: the free surface from the mesh, as surface.py does")
+        ids, xyz, _ = surface.surface(vtk)
     plotter = scene(scene_dir, (width, view_h))
     terrain = plotter.meshes[0]
     dist, near = cKDTree(xyz).query(terrain.points, NEIGHBOURS)
@@ -183,29 +203,29 @@ def main(argv=None):
         f"{outside.sum():,} beyond {REACH:g} m, left clear")
 
     def field(step):
-        u = np.fromfile(run / "surface" / f"Disp_{step:08d}.bin", "<f4").reshape(-1, 3)[:, COMPONENT]
+        u = np.asarray(np.memmap(vtk / f"{name}_{step:08d}.bin", "<f4", "r").reshape(-1, 3)[ids, component], float)
         v = (u[near] * weight).sum(1)
         v[outside] = np.nan
         return v
 
     sample = [field(st) for st in steps[::max(1, len(steps) // 40)]]
     clip = np.nanpercentile(np.abs(np.concatenate(sample)), CLIP)
-    log(f"colour scale +-{clip:.3e} m, the {CLIP:g} percentile of |{LABEL}| on the terrain")
+    log(f"colour scale +-{clip:.3e} {unit}, the {CLIP:g} percentile of |{label}| on the terrain")
     overlay = terrain.copy()
     overlay.points[:, 2] += 0.5  # just above the photo
     overlay.point_data.clear()
-    overlay[LABEL] = field(steps[0])
+    overlay[label] = field(steps[0])
     lut = pv.LookupTable(cmap="RdBu_r", n_values=256, scalar_range=(-clip, clip))
     rgba = lut.values.copy()
     rgba[:, 3] = np.minimum(1, np.abs(np.linspace(-1, 1, 256)) * 1.6) * 0.85 * 255  # clear at zero
     lut.values = rgba
     lut.nan_opacity = 0.0
-    plotter.add_mesh(overlay, scalars=LABEL, cmap=lut, clim=(-clip, clip), ambient=0.6, diffuse=0.4, show_scalar_bar=False)
+    plotter.add_mesh(overlay, scalars=label, cmap=lut, clim=(-clip, clip), ambient=0.6, diffuse=0.4, show_scalar_bar=False)
     railway(plotter, scene_dir, track, (width, view_h))
     cars, texture = build()
     train = place(cars, path_run, s_run, head(0))
     plotter.add_mesh(train, texture=texture, ambient=0.35, diffuse=0.7)
-    series, where = monitors(run)
+    series, where = monitors(run, f"{symbol_letter}{axis}", label)
     for p, c in zip(MONITORS, COLOURS):
         plotter.add_mesh(pv.Sphere(radius=4.0, center=where[p]), color=c, ambient=0.6)
 
@@ -215,7 +235,7 @@ def main(argv=None):
                          "axes.formatter.use_mathtext": True, "axes.unicode_minus": False,
                          "font.size": fs, "axes.labelsize": fs, "xtick.labelsize": 0.85 * fs,
                          "ytick.labelsize": 0.85 * fs, "legend.fontsize": 0.85 * fs})
-    symbol = f"${LABEL}$"
+    symbol = f"${label}$"
     fig = plt.figure(figsize=(width / 100, height / 100), dpi=100)
     ax_view = fig.add_axes((0, plot_h / height, 1, view_h / height))
     ax_view.set_axis_off()
@@ -229,9 +249,9 @@ def main(argv=None):
     bar.formatter.set_powerlimits((0, 0))
     bar.ax.xaxis.set_tick_params(color="white", labelcolor="white")
     bar.ax.xaxis.get_offset_text().set(color="white", path_effects=halo)
-    for label in bar.ax.get_xticklabels():
-        label.set_path_effects(halo)
-    bar.set_label(f"{symbol} (m)", color="white", path_effects=halo)
+    for tick in bar.ax.get_xticklabels():
+        tick.set_path_effects(halo)
+    bar.set_label(f"{symbol} ({unit})", color="white", path_effects=halo)
     bar.ax.xaxis.set_label_position("top")
     left, bottom, top = 5.5 * fs, 3.0 * fs, 1.8 * fs  # px round the plot: tick labels, axis labels, the 1e-6 above
     ax = fig.add_axes((left / width, bottom / height, 1 - 1.4 * left / width, (plot_h - bottom - top) / height))
@@ -240,7 +260,7 @@ def main(argv=None):
     cursor = ax.axvline(0, color="k", lw=1.2)
     ax.set_xlim(0, times[-1])
     ax.set_xlabel("$t$ (s)", labelpad=1)
-    ax.set_ylabel(f"{symbol} (m)")
+    ax.set_ylabel(f"{symbol} ({unit})")
     ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
     ax.legend(loc="upper right", ncol=len(MONITORS), framealpha=0.85, edgecolor="none")
     ax.grid(alpha=0.3)
@@ -249,14 +269,14 @@ def main(argv=None):
         t = frame_t[n]
         k = min(np.searchsorted(times, t, side="right") - 1, len(times) - 2)
         a = (t - times[k]) / (times[k + 1] - times[k])
-        overlay[LABEL] = (1 - a) * field(steps[k]) + a * field(steps[k + 1])
+        overlay[label] = (1 - a) * field(steps[k]) + a * field(steps[k + 1])
         train.points = place(cars, path_run, s_run, head(t)).points
         cam, focal = cams[n], focals[n]
         plotter.camera_position = [tuple(cam), tuple(focal), (0, 0, 1)]
         plotter.camera.clipping_range = (1.0, 12000.0)
         plotter.render()
         image.set_data(plotter.screenshot(return_img=True)[:, :, :3])
-        stamp.set_text(f"$t = {t:.2f}$ s,  train at {abs(speed) * 3.6:.0f} km/h,  {symbol} of the displacement")
+        stamp.set_text(f"$t = {t:.2f}$ s,  train at {abs(speed) * 3.6:.0f} km/h,  {symbol} of the {long_name}")
         cursor.set_xdata([t, t])
         fig.canvas.draw()
         Image.fromarray(np.asarray(fig.canvas.buffer_rgba())[..., :3]).save(frames_dir / f"frame_{n:05d}.png")
@@ -272,7 +292,7 @@ def main(argv=None):
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError:
         ffmpeg = "ffmpeg"
-    video = out / f"speed_{quality}.mp4"
+    video = out / f"speed_{quality}_{name}_{axis}.mp4"
     command = [ffmpeg, "-y", "-loglevel", "error", "-framerate", str(fps),
                "-i", str(frames_dir / "frame_%05d.png"), "-c:v", "libx264", "-crf", "18",
                "-pix_fmt", "yuv420p", str(video)]

@@ -208,6 +208,7 @@ def main(argv=None):
     e_r, e_t, n, d_track, d_frac = frame(xyz)
     axes = np.stack([e_r, e_t, np.tile([0.0, 0.0, 1.0], (len(xyz), 1))], 1)  # (np, 3 axes, 3)
     xyz.astype("<f8").tofile(out / "points.bin")
+    ids.astype("<i8").tofile(out / "ids.bin")  # for movie/speed_movie.py: its points among SPEED's
     quads.tofile(out / "quads.bin")
 
     def write(name, values):

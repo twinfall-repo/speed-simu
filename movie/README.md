@@ -140,7 +140,7 @@ SPEED_NODES=1 SPEED_WALLTIME=04:00:00 apptainer/submit_slurm.sh -- \
 
 Or at the end of the run itself, after `surface.py`: with `SPEED_MOVIE` the
 scene folder, relative to the repository, `run_case.sh` writes
-`RUN_DIR/movie/speed_high.mp4` (log in `movie.log`):
+`RUN_DIR/movie/speed_high_Disp_x.mp4` (log in `movie.log`):
 
 ```bash
 SPEED_MOVIE=scene SPEED_NODES=20 apptainer/submit_slurm.sh -- bash run_case.sh cases/rialba_ttb_nb
